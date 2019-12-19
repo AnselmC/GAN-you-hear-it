@@ -1,6 +1,7 @@
 # Stdlib
 import concurrent.futures
 import time
+import sys
 import logging
 import argparse
 from glob import glob
@@ -8,9 +9,14 @@ from glob import glob
 import librosa
 import numpy as np
 
-
+__description__ = """
+   This script takes a folder containing .wav files, slices each file into snippets, and generates a `.npz` archive.
+   This archive contains one `.npy` file per training sample.
+   Each training sample is the Short-Time Fourier space representation of a snippet of a song.
+   Processing is done concurrently.
+"""
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging.getLogger("Preprocessor")
-
 
 
 def preprocess_audio(audio_folder, output_file, snippet_length=10, time_steps=65):
@@ -39,11 +45,14 @@ def preprocess_audio(audio_folder, output_file, snippet_length=10, time_steps=65
     concurrent.futures.wait(futures)
     data = []
     for f in futures:
-        data.append(f.result())
+        data += f.result()
 
-    logger.debug("Finished preprocessing of {} files.\nSaving result to {}".format(
-        len(files), output_file))
-    np.save(output_file, data)
+    logger.debug("Finished preprocessing of {} files.".format(
+        len(files)))
+    logger.info("Saving result to {}".format(
+        output_file))
+    logger.debug("Generated {} training samples".format(len(data)))
+    np.savez_compressed(output_file, *data)
 
 
 def preprocess_single_file(f, snippet_length, n_fft):
@@ -81,12 +90,11 @@ def preprocess_single_file(f, snippet_length, n_fft):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        "This script takes a folder containing .wav files, slices each file into snippets, and generates a `.npy` file containing these snippets in Short-Time Fourier space intended to be used as training samples. This is done concurrently.")
+    parser = argparse.ArgumentParser(__description__)
     parser.add_argument("-i, --input_folder", dest="input", type=str, required=True,
                         help="The folder containing the wave files.")
-    parser.add_argument("-o, --output_file", dest="output", type=str, default="out.npy",
-                        help="The filename for the generated output")
+    parser.add_argument("-o, --output_file", dest="output", type=str, default="train",
+                        help="The npz archivename for the generated output (default is train)")
     parser.add_argument("-sl, --snippet_length", dest="snippet_length", type=int, default=10,
                         help="The length of each slice in seconds (default is 10)")
     parser.add_argument("-ts, --time_steps", dest="time_steps", type=int, default=65,
@@ -97,10 +105,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.verbose:
         logger.setLevel(logging.DEBUG)
-    
-    logging.info("Starting preprocessing...")
+    else:
+        logger.setLevel(logging.INFO)
+
+
+    print(__description__)
+    print("\n\nStarting preprocessing...")
     start = time.time()
-    print(args)
-    preprocess_audio(args.input, args.output, args.snippet_length, args.time_steps)
-    logging.info("Finished processing files")
-    logging.info("Processing took {} s".format(time.time() - start))
+    preprocess_audio(args.input, args.output,
+                     args.snippet_length, args.time_steps)
+    print("Finished processing files")
+    print("Processing took {:.2f} s".format(time.time() - start))
