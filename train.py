@@ -15,7 +15,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging.getLogger("Training")
 
 
-def train(train_data, epochs=100):
+def train(train_data, epochs=10):
     logger.debug("Initializing training...")
     generator = Generator()
     optimizer_gen = optim.SGD(generator.parameters(), lr=0.0001, momentum=0.95)
@@ -64,8 +64,8 @@ def train(train_data, epochs=100):
         logger.debug("Running fake loss: {}".format(fake_losses[-1]))
 
         running_gen_loss = 0.0
-        logging.debug("Training discriminator...")
-        for step in range(len(train_data)):
+        logging.debug("Training generator...")
+        for step in range(len(train_data)*3):
             optimizer_gen.zero_grad()
             gen_input = np.random.normal(0, 1, 1024)
             fake_data = generator(Variable(torch.Tensor(gen_input)))
@@ -73,6 +73,7 @@ def train(train_data, epochs=100):
             gen_loss = loss_gen(out, Variable(torch.ones([1, 1])))
             gen_loss.backward()
             optimizer_gen.step()
+            logger.debug("Gen loss: {}".format(gen_loss.item()))
             running_gen_loss += gen_loss.item()
         gen_losses.append(running_gen_loss/len(train_data))
         logger.debug("Running generator loss: {}".format(gen_losses[-1]))
@@ -89,8 +90,8 @@ if __name__ == "__main__":
     train_data = [elem for elem in npz_data.values() if elem.shape==(65, 6891)]
     gen, dis = train(train_data[:9])
 
-    sample_data = np.random(0, 1, 1024)
-    generated = gen(sample_data)
+    sample_data = np.random.normal(0, 1, 1024)
+    generated = gen(Variable(torch.Tensor(sample_data)))
     out = generated.detach().numpy()
     out_complex = out[0] + 1j*out[1]
     time_out = librosa.istft()
