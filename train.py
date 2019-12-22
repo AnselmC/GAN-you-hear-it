@@ -90,7 +90,9 @@ if __name__ == "__main__":
     gen, dis = train(train_data[:9])
 
     sample_data = np.random(0, 1, 1024)
-    out = gen(sample_data)
-    time_out = librosa.istft(out.detach().numpy())
+    generated = gen(sample_data)
+    out = generated.detach().numpy()
+    out_complex = out[0] + 1j*out[1]
+    time_out = librosa.istft()
     sr = 22050
     librosa.output.write_wav("out.wav", time_out, sr)
