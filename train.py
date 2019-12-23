@@ -6,18 +6,21 @@ import argparse
 import torch
 from torch import optim, nn
 from torch.autograd import Variable
+from torch.utils.data import DataLoader
 import librosa
 import numpy as np
 # own
 from gann import Generator, Discriminator
+from dataset import AudioSnippetDataset
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging.getLogger("Training")
 
 
-def train(train_data, epochs=10):
+def train(data_loader, epochs, entropy_size):
     logger.debug("Initializing training...")
-    generator = Generator()
+    batch_size = data_loader.batch_size
+    generator = Generator(entropy_size=entropy_size)
     optimizer_gen = optim.SGD(generator.parameters(), lr=0.0001, momentum=0.95)
     loss_gen = nn.BCELoss()
     discriminator = Discriminator()
@@ -35,22 +38,17 @@ def train(train_data, epochs=10):
 
         running_loss = 0.0
         running_fake_loss = 0.0
-        logger.debug("Training discriminator with {} samples".format(len(train_data)))
-        for step in range(len(train_data)):
-            logger.debug("Sample no {} of {}".format(step, len(train_data)))
+        logger.debug(
+            "Training discriminator with {} batch".format(len(data_loader)))
+        for i, data in enumerate(data_loader):
+            logger.debug("Batch: {}/{}".format(i, len(data_loader)))
             optimizer_dis.zero_grad()
-            # take real and imaginary part separately 
-            real_part = np.real(train_data[step])
-            ima_part = np.imag(train_data[step])
-            data = np.array([real_part, ima_part])
-            data = Variable(torch.Tensor(data.reshape(1, *data.shape)))
             out = discriminator(data)
-            loss = loss_dis(out, Variable(torch.ones([1, 1])))
+            loss = loss_dis(out, Variable(torch.ones([batch_size, 1])))
             loss.backward()
-            gen_input = np.random.normal(0, 1, 1024)
-            fake_data = generator(Variable(torch.Tensor(gen_input))).detach()
-            out = discriminator(fake_data.view(1, *fake_data.shape))
-            fake_loss = loss_dis(out, Variable(torch.zeros([1, 1])))
+            fake_data = generator.generate_data(batch_size)
+            out = discriminator(fake_data)
+            fake_loss = loss_dis(out, Variable(torch.zeros([batch_size, 1])))
             fake_loss.backward()
             optimizer_dis.step()
             logger.debug("Loss: {}".format(loss.item()))
@@ -65,12 +63,11 @@ def train(train_data, epochs=10):
 
         running_gen_loss = 0.0
         logging.debug("Training generator...")
-        for step in range(len(train_data)*3):
+        for step in range(len(data_loader)):
             optimizer_gen.zero_grad()
-            gen_input = np.random.normal(0, 1, 1024)
-            fake_data = generator(Variable(torch.Tensor(gen_input)))
-            out = discriminator(fake_data.view(1, *fake_data.shape))
-            gen_loss = loss_gen(out, Variable(torch.ones([1, 1])))
+            fake_data = generator.generate_data(batch_size, train=True)
+            out = discriminator(fake_data)
+            gen_loss = loss_gen(out, Variable(torch.ones([batch_size, 1])))
             gen_loss.backward()
             optimizer_gen.step()
             logger.debug("Gen loss: {}".format(gen_loss.item()))
@@ -85,15 +82,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Trains a GANN on audio signals")
     parser.add_argument("-i, --input_data", dest="input_data", required=True,
                         help="The npz archive with training data created with the `preprocessing.py` script")
+    parser.add_argument("-e, --epochs", dest="epochs", type=int,
+                        help="The number of epochs to train for (default=10)", default=10)
+    parser.add_argument("-bs, --batch_size", dest="batch_size", type=int,
+                        help="The batch size used during training (default is 4)", default=4)
+    parser.add_argument("-en, --entropy_size", dest="entropy_size", type=int,
+                        help="The size of the entropy vector used as input for the generator (default is 1024)", default=1024)
     args = parser.parse_args()
-    npz_data = np.load(args.input_data)
-    train_data = [elem for elem in npz_data.values() if elem.shape==(65, 6891)]
-    gen, dis = train(train_data[:9])
+    train_data = AudioSnippetDataset(args.input_data)
+    data_loader = DataLoader(train_data, batch_size=args.batch_size,
+                            shuffle=True, num_workers=4)
+    gen, dis = train(data_loader=data_loader, entropy_size=args.entropy_size, epochs=args.epochs)
 
-    sample_data = np.random.normal(0, 1, 1024)
-    generated = gen(Variable(torch.Tensor(sample_data)))
+    generated = gen.generate_data(1)
     out = generated.detach().numpy()
     out_complex = out[0] + 1j*out[1]
-    time_out = librosa.istft()
+    time_out = librosa.istft(out_complex)
     sr = 22050
     librosa.output.write_wav("out.wav", time_out, sr)
