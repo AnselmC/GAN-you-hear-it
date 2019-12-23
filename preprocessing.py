@@ -1,10 +1,12 @@
 # Stdlib
 import concurrent.futures
+import os
 import time
 import sys
 import logging
 import argparse
 from glob import glob
+from shutil import rmtree
 # Thirdparty
 import librosa
 import numpy as np
@@ -19,11 +21,11 @@ logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging.getLogger("Preprocessor")
 
 
-def preprocess_audio(audio_folder, output_file, snippet_length=10, time_steps=65):
+def preprocess_audio(audio_folder, output_folder, snippet_length=10, time_steps=65):
     """Preprocesses a folder of audio files (`.wav`, `.mp3`, `.mp4`, `.m4a`) and generates a `.npy` file with snippets of the files in Short-Time Fourier space
 
     :param audio_folder: Path to the folder containing `.wav` files
-    :param output_file: Pathname of file to save results to
+    :param output_folder: Pathname of file to save results to
     :param snippet_length: Each file will be split into n snippets of length `snippet_length` in seconds (default: 10)
     :param time_steps: The number of time steps to split each snippet into in Short-Time Fourier space (default: 65)
 
@@ -34,29 +36,35 @@ def preprocess_audio(audio_folder, output_file, snippet_length=10, time_steps=65
     files += glob(audio_folder + "*.mp4")
     files += glob(audio_folder + "*.m4a")
     if len(files) == 0:
-        logger.error("Found no .wav files, raising error")
-        raise IOError("No .wav file found in {}".format(audio_folder))
-    logger.debug("Found {} .wav files in {}".format(len(files), audio_folder))
+        logger.error("Found no audio files, raising error")
+        raise IOError("No audio file found in {}".format(audio_folder))
+    logger.debug("Found {} audio files in {}".format(len(files), audio_folder))
     n_fft = (time_steps - 1) * 2
     # preprocess files concurrently
     jobs = {}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:
+    file_prefix = "arr_"
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         for f in files:
             logger.debug("Added {} to process queue".format(f))
             job = executor.submit(
                 preprocess_single_file, *[f, snippet_length, n_fft])
             jobs[job] = f
-    data = []
-    for job in concurrent.futures.as_completed(jobs):
-        data += job.result()
-        del jobs[job]
+        i = 0
+        for job in concurrent.futures.as_completed(jobs):
+            data = job.result()
+            file_names = [file_prefix + str(j) for j in range(i, i+len(data))]
+            logger.debug("Saving {} to {} ... {}".format(jobs[job], file_names[0], file_names[-1])) 
+            d = dict(zip(file_names, data))
+            for k, v in d.items():
+                np.save(os.path.join(output_folder, k), v)
+            i += len(data)
+            del jobs[job]
 
     logger.debug("Finished preprocessing of {} files.".format(
         len(files)))
     logger.info("Saving result to {}".format(
-        output_file))
-    logger.debug("Generated {} training samples".format(len(data)))
-    np.savez_compressed(output_file, *data)
+        output_folder))
+    logger.debug("Generated {} training samples".format(i))
 
 
 def preprocess_single_file(f, snippet_length, n_fft):
@@ -79,20 +87,14 @@ def preprocess_single_file(f, snippet_length, n_fft):
     splits = [signal[i:i+10*sr] for i in np.arange(0, len(signal), 10*sr)]
     del signal
     logger.debug("Generated {} splits from {}".format(len(splits), f))
-    # create stft for each split concurrently
-    jobs = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        for i, split in enumerate(splits):
-            logger.debug(
-                "Adding split no. {} of {} to thread queue".format(i, f))
-            job = executor.submit(
-                librosa.stft, **{"y": split, "n_fft": n_fft})
-            jobs[job] = split
-
+    # create stft for each split
     data = []
-    for job in concurrent.futures.as_completed(jobs):
-        data.append(job.result())
-        del jobs[job]
+    dim = splits[0].shape
+    for split in splits:
+        if split.shape != dim:
+            continue
+        transformed = librosa.stft(split, n_fft)
+        data.append(transformed)
     logger.debug("Finished processing of {}".format(f))
 
     return data
@@ -102,8 +104,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(__description__)
     parser.add_argument("-i, --input_folder", dest="input", type=str, required=True,
                         help="The folder containing the audio files.")
-    parser.add_argument("-o, --output_file", dest="output", type=str, default="train",
-                        help="The npz archivename for the generated output (default is train)")
+    parser.add_argument("-o, --output_folder", dest="output", type=str, default="training_data",
+                        help="The folder to save the training data (default is training_data)")
     parser.add_argument("-sl, --snippet_length", dest="snippet_length", type=int, default=10,
                         help="The length of each slice in seconds (default is 10)")
     parser.add_argument("-ts, --time_steps", dest="time_steps", type=int, default=65,
@@ -116,6 +118,24 @@ if __name__ == "__main__":
         logger.setLevel(logging.DEBUG)
     else:
         logger.setLevel(logging.INFO)
+
+    if os.path.exists(args.output):
+        print("{} already exists. Overwrite? Y/N/C".format(args.output))
+        user_input = ""
+        while user_input not in ["Y", "y", "N", "n", "C", "c"]:
+            user_input = input()
+            if user_input == "Y":
+                rmtree(args.output)
+            elif user_input == "N":
+                print("Insert new folder name")
+                args.output = input()
+            elif user_input == "C":
+                print("Exiting")
+                exit()
+            else:
+                print("Did not understand {}. Please use Y/N/C".format(user_input))
+    os.makedirs(args.output)
+
 
 
     print(__description__)
