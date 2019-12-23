@@ -1,5 +1,7 @@
+import numpy as np
 import torch
 from torch import nn
+from torch.autograd import Variable
 
 from helpers import get_stft_shape
 
@@ -9,14 +11,18 @@ class Generator(nn.Module):
 
     :param sample_rate: the sample_rate that the signal should be created at (default: 22050)
     :param snippet_length: the length of the created signal in seconds (default: 10)
-    :param input_size: the size of the entropy noise (default: 1024)
+    :param entropy_size: the size of the entropy noise (default: 1024)
     :param time_steps: the number of time steps in the Short-Time Fourier representation of the signal
     """
 
-    def __init__(self, sample_rate=22050, snippet_length=10, input_size=1024, time_steps=65):
+    def __init__(self, sample_rate=22050, snippet_length=10, entropy_size=1024, time_steps=65):
         super(Generator, self).__init__()
         self.time_steps, self.num_freqs = get_stft_shape(
             sample_rate, snippet_length, time_steps)
+        self.sample_rate = sample_rate
+        self.snippet_length = snippet_length
+        self.time_steps = time_steps
+        self.entropy_size = entropy_size
 
         def ganlayer(n_input, n_output, dropout=True):
             pipeline = [nn.Linear(n_input, n_output)]
@@ -26,7 +32,7 @@ class Generator(nn.Module):
             return pipeline
 
         self.model = nn.Sequential(
-            *ganlayer(input_size, 32, dropout=False),
+            *ganlayer(entropy_size, 32, dropout=False),
             *ganlayer(32, 64),
             nn.Linear(64, 2*self.time_steps*self.num_freqs),
             nn.Tanh()  # frequency amplitudes are normalized
@@ -36,6 +42,26 @@ class Generator(nn.Module):
         signal = self.model(z)
         signal = signal.view(*(2, self.time_steps, self.num_freqs))
         return signal
+
+    def generate_data(self, num_samples, train=False):
+        for i in range(num_samples):
+            gen_input = np.random.normal(0, 1, self.entropy_size)
+            if i != 0:
+                if not train:
+                    data = torch.cat((data, self(
+                        Variable(torch.Tensor(gen_input))).detach().unsqueeze(0)))
+                else:
+                    data = torch.cat((data, self(
+                        Variable(torch.Tensor(gen_input))).unsqueeze(0)))
+            else:
+                if not train:
+                    data = self(
+                        Variable(torch.Tensor(gen_input))).detach().unsqueeze(0)
+                else:
+                    data = self(
+                        Variable(torch.Tensor(gen_input))).unsqueeze(0)
+
+        return data
 
 
 class Discriminator(nn.Module):
@@ -47,11 +73,13 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
 
         self.cnn_layers = nn.Sequential(
-            nn.Conv2d(in_channels=2, out_channels=4, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels=2, out_channels=4,
+                      kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(4),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(in_channels=4, out_channels=4, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels=4, out_channels=4,
+                      kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(4),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
