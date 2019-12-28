@@ -1,5 +1,27 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from torch import Tensor as tensor
+
+
+def visualize_sample(sample):
+    real = sample[0][0].detach().numpy()
+    imag = sample[0][1].detach().numpy()
+    # Min-max normalization s.t. it can be displayed as imag
+    real = (real-real.min())/(real.max()-real.min())
+    imag = (imag-imag.min())/(imag.max()-imag.min())
+
+    x, y = real.shape
+    x_factor = (y // np.sqrt(x*y)).astype(int)
+    new_x = x * x_factor
+    new_y = (x*y) // new_x
+    real = real[:, :new_y*x_factor]
+    imag = imag[:, :new_y*x_factor]
+    real = real.reshape(new_x, new_y)
+    imag = imag.reshape(new_x, new_y)
+    plt.ion()
+    plt.imshow(np.hstack([real, imag]))
+    plt.show()
+    plt.pause(0.00001)
 
 
 def get_stft_shape(sample_rate, snippet_length, time_steps):
