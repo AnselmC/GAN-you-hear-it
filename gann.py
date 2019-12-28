@@ -34,7 +34,8 @@ class Generator(nn.Module):
         self.model = nn.Sequential(
             *ganlayer(entropy_size, 32, dropout=False),
             *ganlayer(32, 64),
-            nn.Linear(64, 2*self.time_steps*self.num_freqs),
+            *ganlayer(64, 128),
+            nn.Linear(128, 2*self.time_steps*self.num_freqs),
             nn.Tanh()  # frequency amplitudes are normalized
         )
 
