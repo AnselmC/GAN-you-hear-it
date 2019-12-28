@@ -4,19 +4,18 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 from torch.utils.data import Dataset
+from torch.nn.functional import normalize
+
 
 class AudioSnippetDataset(Dataset):
-    def __init__(self, training_folder, transform=None):
+    def __init__(self, training_folder, transform=normalize):
         super(AudioSnippetDataset, self).__init__()
         self.training_folder = training_folder
         self.transform = transform
         self.len = len(glob(os.path.join(training_folder, "*.npy")))
-        print(self.len)
-        
 
     def __len__(self):
         return self.len
-
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
@@ -30,6 +29,6 @@ class AudioSnippetDataset(Dataset):
         item = Variable(torch.Tensor(item))
 
         if self.transform:
-           item = self.transform(item)
+            item = self.transform(item)
 
         return item
