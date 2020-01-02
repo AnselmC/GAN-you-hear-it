@@ -21,7 +21,7 @@ def visualize_sample(sample):
     plt.ion()
     plt.imshow(np.hstack([real, imag]))
     plt.show()
-    plt.pause(0.00001)
+    plt.pause(0.0000001)
 
 
 def get_stft_shape(sample_rate, snippet_length, time_steps):

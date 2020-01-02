@@ -28,13 +28,13 @@ class Generator(nn.Module):
             pipeline = [nn.Linear(n_input, n_output)]
             pipeline.append(nn.LeakyReLU(0.2, inplace=True))
             if dropout:
-                pipeline.append(nn.Dropout(0.25))
+                pipeline.append(nn.Dropout(0.5))
             return pipeline
 
         self.model = nn.Sequential(
             *ganlayer(entropy_size, 64, dropout=False),
-            *ganlayer(64, 128, dropout=False),
-            *ganlayer(128, 256, dropout=False),
+            *ganlayer(64, 128, dropout=True),
+            *ganlayer(128, 256, dropout=True),
             nn.Linear(256, 2*self.time_steps*self.num_freqs),
             nn.Tanh()  # frequency amplitudes are normalized
         )
@@ -47,6 +47,7 @@ class Generator(nn.Module):
     def generate_data(self, num_samples, device, train=False):
         for i in range(num_samples):
             gen_input = np.random.normal(0, 1, self.entropy_size)
+            gen_input /= np.linalg.norm(gen_input)
             if i != 0:
                 if not train:
                     data = torch.cat((data, self(
@@ -77,13 +78,13 @@ class Discriminator(nn.Module):
             nn.Conv2d(in_channels=2, out_channels=4,
                       kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(4),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.AvgPool2d(kernel_size=2, stride=2),
             nn.Conv2d(in_channels=4, out_channels=4,
                       kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(4),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.AvgPool2d(kernel_size=2, stride=2),
         )
 
         self.linear_layers = nn.Sequential(

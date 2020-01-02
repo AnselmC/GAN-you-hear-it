@@ -22,15 +22,15 @@ def train(data_loader, epochs, entropy_size):
     logger.debug("Initializing training...")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     batch_size = data_loader.batch_size
-    L1_lambda = 0.00001
+    L1_lambda = 0.0001
     generator = Generator(entropy_size=entropy_size)
     generator.to(device)
-    optimizer_gen = optim.SGD(generator.parameters(), lr=0.001, momentum=0.90)
+    optimizer_gen = optim.Adam(generator.parameters(), lr=0.0001)
     loss_gen = nn.BCELoss()
     discriminator = Discriminator()
     discriminator.to(device)
     optimizer_dis = optim.SGD(
-        discriminator.parameters(), lr=0.000001, momentum=0.90)
+        discriminator.parameters(), lr=0.0001, momentum=0.90)
     loss_dis = nn.BCELoss()
 
     losses = []
@@ -44,18 +44,20 @@ def train(data_loader, epochs, entropy_size):
         running_loss = 0.0
         running_fake_loss = 0.0
         logger.debug(
-            "Training discriminator with {} batch".format(len(data_loader)))
+            "Training discriminator with {} batches".format(len(data_loader)))
         for i, data in enumerate(data_loader):
             data = data.to(device)
             logger.debug("Batch: {}/{}".format(i, len(data_loader)))
-            #visualize_sample(data.cpu())
+            visualize_sample(data.cpu())
             optimizer_dis.zero_grad()
             out = discriminator(data)
-            loss = loss_dis(out, Variable(torch.ones([len(out), 1])).to(device))
+            label = Variable(0.7 + 0.3 * torch.rand(len(out))).to(device) # make labels noisy (real: 0.7-1.2)
+            loss = loss_dis(out, label).to(device)
             loss.backward()
             fake_data = generator.generate_data(batch_size, device)
             out = discriminator(fake_data)
-            fake_loss = loss_dis(out, Variable(torch.zeros([len(out), 1])).to(device))
+            label = Variable(0.3 * torch.rand(len(out))).to(device) # make labels noisy (fake: 0-0.3)
+            fake_loss = loss_dis(out, label).to(device)
             fake_loss.backward()
             optimizer_dis.step()
             logger.debug("Loss: {}".format(loss.item()))
@@ -63,8 +65,8 @@ def train(data_loader, epochs, entropy_size):
             running_loss += loss.item()
             running_fake_loss += fake_loss.item()
 
-        losses.append(running_loss/len(train_data))
-        fake_losses.append(running_fake_loss/len(train_data))
+        losses.append(running_loss/len(data_loader))
+        fake_losses.append(running_fake_loss/len(data_loader))
         logger.debug("Running loss: {}".format(losses[-1]))
         logger.debug("Running fake loss: {}".format(fake_losses[-1]))
 
@@ -76,7 +78,8 @@ def train(data_loader, epochs, entropy_size):
             fake_data = fake_data.to(device)
             visualize_sample(fake_data.cpu())
             out = discriminator(fake_data)
-            reg_loss = torch.sum(torch.abs(fake_data))
+            reg_loss = torch.norm(fake_data, p=1)/len(fake_data)
+            #reg_loss = len(torch.nonzero(fake_data))/len(fake_data)
             gen_loss = loss_gen(out, Variable(torch.ones([batch_size, 1])).to(device))
             gen_loss += L1_lambda * reg_loss
             gen_loss.backward()
@@ -105,8 +108,9 @@ if __name__ == "__main__":
                             shuffle=True, num_workers=4)
     gen, dis = train(data_loader=data_loader, entropy_size=args.entropy_size, epochs=args.epochs)
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     generated = gen.generate_data(1, device).squeeze(0)
-    out = generated.detach().numpy()
+    out = generated.cpu().detach().numpy()
     out_complex = out[0] + 1j*out[1]
     time_out = librosa.istft(out_complex)
     sr = 22050
