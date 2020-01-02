@@ -32,10 +32,10 @@ class Generator(nn.Module):
             return pipeline
 
         self.model = nn.Sequential(
-            *ganlayer(entropy_size, 32, dropout=False),
-            *ganlayer(32, 64),
-            *ganlayer(64, 128),
-            nn.Linear(128, 2*self.time_steps*self.num_freqs),
+            *ganlayer(entropy_size, 64, dropout=False),
+            *ganlayer(64, 128, dropout=False),
+            *ganlayer(128, 256, dropout=False),
+            nn.Linear(256, 2*self.time_steps*self.num_freqs),
             nn.Tanh()  # frequency amplitudes are normalized
         )
 
@@ -44,23 +44,23 @@ class Generator(nn.Module):
         signal = signal.view(*(2, self.time_steps, self.num_freqs))
         return signal
 
-    def generate_data(self, num_samples, train=False):
+    def generate_data(self, num_samples, device, train=False):
         for i in range(num_samples):
             gen_input = np.random.normal(0, 1, self.entropy_size)
             if i != 0:
                 if not train:
                     data = torch.cat((data, self(
-                        Variable(torch.Tensor(gen_input))).detach().unsqueeze(0)))
+                        Variable(torch.Tensor(gen_input)).to(device)).detach().unsqueeze(0)))
                 else:
                     data = torch.cat((data, self(
-                        Variable(torch.Tensor(gen_input))).unsqueeze(0)))
+                        Variable(torch.Tensor(gen_input)).to(device)).unsqueeze(0)))
             else:
                 if not train:
                     data = self(
-                        Variable(torch.Tensor(gen_input))).detach().unsqueeze(0)
+                        Variable(torch.Tensor(gen_input)).to(device)).detach().unsqueeze(0)
                 else:
                     data = self(
-                        Variable(torch.Tensor(gen_input))).unsqueeze(0)
+                        Variable(torch.Tensor(gen_input)).to(device)).unsqueeze(0)
 
         return data
 
