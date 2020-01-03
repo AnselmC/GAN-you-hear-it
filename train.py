@@ -1,5 +1,6 @@
 # stdlib
 import logging
+import os
 import sys
 import argparse
 # thirdparty
@@ -79,7 +80,6 @@ def train(data_loader, epochs, entropy_size):
             visualize_sample(fake_data.cpu())
             out = discriminator(fake_data)
             reg_loss = torch.norm(fake_data, p=1)/len(fake_data)
-            #reg_loss = len(torch.nonzero(fake_data))/len(fake_data)
             gen_loss = loss_gen(out, Variable(torch.ones([batch_size, 1])).to(device))
             gen_loss += L1_lambda * reg_loss
             gen_loss.backward()
@@ -112,6 +112,19 @@ if __name__ == "__main__":
     generated = gen.generate_data(1, device).squeeze(0)
     out = generated.cpu().detach().numpy()
     out_complex = out[0] + 1j*out[1]
+    results_dir = "results"
+    if not os.path.exists(results_dir):
+        os.mkdir(results_dir)
+    wav_dir = os.path.join(results_dir, "audio")
+    if not os.path.exists(wav_dir):
+        os.mkdir(results_dir)
+    model_dir = os.path.join(results_dir, "models")
+    fn_prefix = str(args.input_data) + "_" + str(args.epochs) +  "_" + str(args.batch_size) + "_" + str(args.entropy_size)
+    fn_wav = os.path.join(wav_dir, fn_prefix + ".wav")
+    fn_gen_model = os.path.join(model_dir, fn_prefix + "_gen.model")
+    fn_dis_model = os.path.join(model_dir, fn_prefix + "_dis.model")
     time_out = librosa.istft(out_complex)
     sr = 22050
-    librosa.output.write_wav("out.wav", time_out, sr)
+    librosa.output.write_wav(fn_model, time_out, sr)
+    torch.save(gen.state_dict(), fn_gen_model)
+    torch.save(dis.state_dict(), fn_dis_model)
