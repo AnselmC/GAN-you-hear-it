@@ -44,7 +44,7 @@ def train(data_loader, epochs, entropy_size, models, visual):
     fake_losses = []
     gen_losses = []
     logger.debug("Init done")
-    logger.debug("Starting training with {} epochs".format(epochs))
+    logger.debug("Starting training with {} samples and {} epochs".format(len(train_data), epochs))
     for epoch in range(epochs):
         logger.debug("Epoch: {} of {}".format(epoch, epochs))
 
@@ -109,6 +109,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Trains a GANN on audio signals")
     parser.add_argument("--input_data", dest="input_data", required=True,
                         help="The npz archive with training data created with the `preprocessing.py` script")
+    parser.add_argument("--subset_size", dest="subset_size", type=int,
+                        help="The subset size to use from the input folder. Entire folder is used if not given or subset size is larger than folder size")
     parser.add_argument("--epochs", dest="epochs", type=int,
                         help="The number of epochs to train for (default=10)", default=10)
     parser.add_argument("--batch_size", dest="batch_size", type=int,
@@ -120,7 +122,7 @@ if __name__ == "__main__":
     parser.add_argument("--visual", dest="visual", action="store_true",
                         help="Whether to show visual representations of the training samples and generated results as images")
     args = parser.parse_args()
-    train_data = AudioSnippetDataset(args.input_data)
+    train_data = AudioSnippetDataset(args.input_data, subset_size=args.subset_size)
     data_loader = DataLoader(train_data, batch_size=args.batch_size,
                             shuffle=True, num_workers=4)
     gen, dis = train(data_loader=data_loader, entropy_size=args.entropy_size, epochs=args.epochs, models=args.models, visual=args.visual)
@@ -138,7 +140,7 @@ if __name__ == "__main__":
     model_dir = os.path.join(results_dir, "models")
     if not os.path.exists(model_dir):
         os.mkdir(model_dir)
-    fn_prefix = str(args.input_data) + "_" + str(args.epochs) +  "_" + str(args.batch_size) + "_" + str(args.entropy_size)
+    fn_prefix = str(args.input_data) + "_" + str(args.epochs) +  "_" + str(args.batch_size) + "_" + str(args.entropy_size) + "_" + str(len(train_data))
     fn_wav = os.path.join(wav_dir, fn_prefix + ".wav")
     fn_gen_model = os.path.join(model_dir, fn_prefix + "_gen.model")
     fn_dis_model = os.path.join(model_dir, fn_prefix + "_dis.model")

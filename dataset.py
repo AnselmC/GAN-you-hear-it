@@ -8,21 +8,22 @@ from torch.nn.functional import normalize
 
 
 class AudioSnippetDataset(Dataset):
-    def __init__(self, training_folder, transform=normalize):
+    def __init__(self, training_folder, subset_size=None, transform=normalize):
         super(AudioSnippetDataset, self).__init__()
-        self.training_folder = training_folder
         self.transform = transform
-        self.len = len(glob(os.path.join(training_folder, "*.npy")))
+        self.files = glob(os.path.join(training_folder, "*.npy"))
+        if subset_size and subset_size < len(self.files):
+            self.files = np.random.choice(self.files, subset_size)
 
     def __len__(self):
-        return self.len
+        return len(self.files)
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        file_name = "arr_" + str(idx) + ".npy"
-        item = np.load(os.path.join(self.training_folder, file_name))
+        file_name = self.files[idx]
+        item = np.load(file_name)
         real = np.real(item)
         imag = np.imag(item)
         item = np.array([real, imag])
