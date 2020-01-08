@@ -5,7 +5,7 @@ import sys
 import argparse
 # thirdparty
 import torch
-from torch import optim, nn
+from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 import librosa
@@ -24,21 +24,12 @@ def train(data_loader, epochs, entropy_size, models, visual):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     batch_size = data_loader.batch_size
     
-    discriminator = Discriminator()
-    if models:
-        discriminator.load_state_dict(torch.load(models[0]))
-    discriminator.to(device)
-    optimizer_dis = optim.SGD(
-        discriminator.parameters(), lr=0.0001, momentum=0.90)
-    loss_dis = nn.BCELoss()
+    discriminator = Discriminator(device, model=models[0] if models else None, lr=0.0001)
 
-    generator = Generator(entropy_size=entropy_size)
-    if models:
-        generator.load_state_dict(torch.load(models[1]))
-    generator.to(device)
-    optimizer_gen = optim.Adam(generator.parameters(), lr=0.0001)
-    loss_gen = nn.BCELoss()
-    L1_lambda = 0.0001
+    generator = Generator(device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0001)
+    L1_lambda = 0.01 # 0.0001
+
+    dim4d = lambda a, b, c, d: a*b*c*d
 
     losses = []
     fake_losses = []
@@ -59,19 +50,25 @@ def train(data_loader, epochs, entropy_size, models, visual):
             logger.debug("Batch: {}/{}".format(step, len(data_loader)))
             if visual:
                 visualize_sample(data.cpu())
-            optimizer_dis.zero_grad()
+            discriminator.optim.zero_grad()
             out = discriminator(data)
-            label = Variable(0.7 + 0.3 * torch.rand(len(out))).to(device) # make labels noisy (real: 0.7-1.2)
-            loss = loss_dis(out, label).to(device)
+            label = Variable(0.7 + 0.3 * torch.rand(len(out), 1)).to(device) # make labels noisy (real: 0.7-1.2)
+            #acc = len(out[out>=0.5])/len(out)
+            loss = discriminator.loss(out, label).to(device)
             loss.backward()
-            fake_data = generator.generate_data(batch_size, device)
+            fake_data = generator.generate_data(batch_size, device, train=True)
             out = discriminator(fake_data)
-            label = Variable(0.3 * torch.rand(len(out))).to(device) # make labels noisy (fake: 0-0.3)
-            fake_loss = loss_dis(out, label).to(device)
+            if visual:
+                visualize_sample(fake_data.cpu())
+            #fake_acc = len(out[out<0.5])/len(out)
+            label = Variable(0.3 * torch.rand(len(out), 1)).to(device) # make labels noisy (fake: 0-0.3)
+            fake_loss = discriminator.loss(out, label).to(device)
             fake_loss.backward()
-            optimizer_dis.step()
+            discriminator.optim.step()
             logger.debug("Loss: {}".format(loss.item()))
+            #logger.debug("Acc: {}".format(acc))
             logger.debug("Fake Loss: {}".format(fake_loss.item()))
+            #logger.debug("Fake acc: {}".format(acc))
             running_loss += loss.item()
             running_fake_loss += fake_loss.item()
 
@@ -81,23 +78,25 @@ def train(data_loader, epochs, entropy_size, models, visual):
         logger.debug("Running fake loss: {}".format(fake_losses[-1]))
 
         running_gen_loss = 0.0
-        logging.debug("Training generator...")
+        logger.debug("Training generator...")
         discriminator.eval()
         generator.train()
         for step in range(len(data_loader)):
-            optimizer_gen.zero_grad()
+            generator.optim.zero_grad()
             logger.debug("Batch: {}/{}".format(step, len(data_loader)))
             fake_data = generator.generate_data(batch_size, device, train=True)
-            fake_data = fake_data.to(device)
             if visual:
                 visualize_sample(fake_data.cpu())
             out = discriminator(fake_data)
-            reg_loss = torch.norm(fake_data, p=1)/len(fake_data)
-            gen_loss = loss_gen(out, Variable(torch.ones([batch_size, 1])).to(device))
+            #acc = len(out[out>=0.5])/len(out)
+            # TODO: norm calculation is wrong
+            reg_loss = torch.norm(fake_data, p=1)/dim4d(*fake_data.shape)
+            gen_loss = generator.loss(out, Variable(torch.ones([batch_size, 1])).to(device))
             gen_loss += L1_lambda * reg_loss
             gen_loss.backward()
-            optimizer_gen.step()
+            generator.optim.step()
             logger.debug("Gen loss: {}".format(gen_loss.item()))
+            #logger.debug("Gen Acc: {}".format(acc))
             running_gen_loss += gen_loss.item()
         gen_losses.append(running_gen_loss/len(data_loader))
         logger.debug("Running generator loss: {}".format(gen_losses[-1]))
@@ -116,7 +115,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", dest="batch_size", type=int,
                         help="The batch size used during training (default is 4)", default=4)
     parser.add_argument("--entropy_size", dest="entropy_size", type=int,
-                        help="The size of the entropy vector used as input for the generator (default is 1024)", default=1024)
+                        help="The size of the entropy vector used as input for the generator (default is 32)", default=32)
     parser.add_argument("--models", dest="models", type=str, nargs=2,
                         help="Pretrained models to use for further training; Discriminator, then Generator (default None)")
     parser.add_argument("--visual", dest="visual", action="store_true",
@@ -128,8 +127,8 @@ if __name__ == "__main__":
     gen, dis = train(data_loader=data_loader, entropy_size=args.entropy_size, epochs=args.epochs, models=args.models, visual=args.visual)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    generated = gen.generate_data(1, device).squeeze(0)
-    out = generated.cpu().detach().numpy()
+    generated = gen.generate_data(1, device)
+    out = generated.squeeze(0).cpu().detach().numpy()
     out_complex = out[0] + 1j*out[1]
     results_dir = "results"
     if not os.path.exists(results_dir):
@@ -140,7 +139,7 @@ if __name__ == "__main__":
     model_dir = os.path.join(results_dir, "models")
     if not os.path.exists(model_dir):
         os.mkdir(model_dir)
-    fn_prefix = str(args.input_data) + "_" + str(args.epochs) +  "_" + str(args.batch_size) + "_" + str(args.entropy_size) + "_" + str(len(train_data))
+    fn_prefix = str(args.epochs) +  "_" + str(args.batch_size) + "_" + str(args.entropy_size) + "_" + str(len(train_data))
     fn_wav = os.path.join(wav_dir, fn_prefix + ".wav")
     fn_gen_model = os.path.join(model_dir, fn_prefix + "_gen.model")
     fn_dis_model = os.path.join(model_dir, fn_prefix + "_dis.model")
