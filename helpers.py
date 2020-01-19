@@ -21,7 +21,7 @@ def visualize_sample(sample):
     plt.ion()
     plt.imshow(np.hstack([real, imag]))
     plt.show()
-    plt.pause(0.00001)
+    plt.pause(0.0000001)
 
 
 def get_stft_shape(sample_rate, snippet_length, time_steps):
@@ -33,7 +33,10 @@ def get_stft_shape(sample_rate, snippet_length, time_steps):
     :returns: the shape of the matrix with dim time steps times number of frequencies
     :rtype: tuple(int, int)
     """
-    return (time_steps, np.ceil(sample_rate*2*snippet_length/(time_steps-1)).astype(int))
+    sample_length = snippet_length * sample_rate
+    n_fft = (time_steps - 1) * 2
+    win_length = int(n_fft/4)
+    return (time_steps, int(sample_length/win_length + 1))
 
 
 def save_as_time_signal(stft_signal, output_file, sr=22050):
