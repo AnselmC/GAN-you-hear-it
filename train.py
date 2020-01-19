@@ -27,7 +27,7 @@ def train(data_loader, epochs, entropy_size, models, visual):
     discriminator = Discriminator(device, model=models[0] if models else None, lr=0.0001)
 
     generator = Generator(device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0001)
-    L1_lambda = 0.01 # 0.0001
+    L1_lambda = 100 # 0.0001
 
     dim4d = lambda a, b, c, d: a*b*c*d
 
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", dest="batch_size", type=int,
                         help="The batch size used during training (default is 4)", default=4)
     parser.add_argument("--entropy_size", dest="entropy_size", type=int,
-                        help="The size of the entropy vector used as input for the generator (default is 32)", default=32)
+                        help="The size of the entropy vector used as input for the generator (default is 10)", default=10)
     parser.add_argument("--models", dest="models", type=str, nargs=2,
                         help="Pretrained models to use for further training; Discriminator, then Generator (default None)")
     parser.add_argument("--visual", dest="visual", action="store_true",

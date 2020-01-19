@@ -28,7 +28,7 @@ class Generator(CustomModel):
     :param time_steps: the number of time steps in the Short-Time Fourier representation of the signal
     """
 
-    def __init__(self, device, model=None, sample_rate=22050, snippet_length=10, entropy_size=32, time_steps=65, lr=0.0001):
+    def __init__(self, device, model=None, sample_rate=22050, snippet_length=10, entropy_size=10, time_steps=65, lr=0.0001):
         super(Generator, self).__init__(device)
         self.time_steps, self.num_freqs = get_stft_shape(
             sample_rate, snippet_length, time_steps)
@@ -38,16 +38,16 @@ class Generator(CustomModel):
         self.entropy_size = entropy_size
 
         self.model = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=2, padding=0, stride=1),
-            nn.BatchNorm2d(16),
+            nn.ConvTranspose2d(in_channels=self.entropy_size, out_channels=8, kernel_size=2, padding=0, stride=1),
+            nn.BatchNorm2d(8),
             nn.LeakyReLU(0.2, inplace=True),
 
-            nn.ConvTranspose2d(in_channels=16, out_channels=8, kernel_size=2, padding=0, stride=1),
-            nn.BatchNorm2d(8),
+            nn.ConvTranspose2d(in_channels=8, out_channels=6, kernel_size=2, padding=0, stride=1),
+            nn.BatchNorm2d(6),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout(0.5),
 
-            nn.ConvTranspose2d(in_channels=8, out_channels=4, kernel_size=2, padding=0, stride=1),
+            nn.ConvTranspose2d(in_channels=6, out_channels=4, kernel_size=2, padding=0, stride=1),
             nn.BatchNorm2d(4),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout(0.5),
