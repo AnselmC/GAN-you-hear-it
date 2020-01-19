@@ -19,45 +19,94 @@ class CustomModel(nn.Module):
         raise NotImplementedError()
 
 
-class Generator(CustomModel):
+class LinearGenerator(CustomModel):
+    def __init__(self, device, model=None, sample_rate=22050, bpm=120, entropy_size=128, num_beats=8, lr=0.0001):
+        super(LinearGenerator, self).__init__(device)
+        snippet_length = num_beats / (bpm / 60)
+        self.num_beats, self.num_freqs = get_stft_shape(
+            sample_rate, snippet_length, num_beats)
+        self.sample_rate = sample_rate
+        self.snippet_length = snippet_length
+        self.entropy_size = entropy_size
+
+        def ganlayer(input_dim, output_dim, dropout=True):
+            pipeline = [nn.Linear(input_dim, output_dim)]
+            pipeline.append(nn.LeakyReLU(0.2, inplace=True))
+            if dropout:
+                pipeline.append(nn.Dropout(0.5))
+            return pipeline
+
+        self.model = nn.Sequential(
+            *ganlayer(entropy_size, 32, dropout=False),
+            *ganlayer(32, 64),
+            *ganlayer(64, 128),
+            *ganlayer(128, 256),
+            nn.Linear(256, 2 * self.num_beats * self.num_freqs),
+            nn.Tanh()
+        )
+        self.optim = optim.Adam(self.parameters(), lr=lr)
+        self.loss = nn.BCELoss()
+        self.load(model)
+        self.to(device)
+
+    def forward(self, x):
+        x = self.model(x)
+        x = x.view(*(-1, 2, self.num_beats, self.num_freqs))
+        return x
+
+    def generate_data(self, num_samples, device, train=False):
+        if not train:
+            data = self(Variable(torch.randn(
+                num_samples, self.entropy_size)).to(device)).detach()
+        else:
+            data = self(Variable(torch.randn(
+                num_samples, self.entropy_size)).to(device))
+        return data
+
+
+class ConvolutionalGenerator(CustomModel):
     """Given some noise, or entropy, this generator creates an audio signal in the Short-Time Fourier space
 
     :param sample_rate: the sample_rate that the signal should be created at (default: 22050)
-    :param snippet_length: the length of the created signal in seconds (default: 10)
+    :param bpm: the tempo of the created sample in beats per minute (default:120)
     :param entropy_size: the size of the entropy noise (default: 1024)
-    :param time_steps: the number of time steps in the Short-Time Fourier representation of the signal
+    :param num_beats: the number of time steps in the Short-Time Fourier representation of the signal
     """
 
-    def __init__(self, device, model=None, sample_rate=22050, snippet_length=10, entropy_size=10, time_steps=65, lr=0.0001):
-        super(Generator, self).__init__(device)
-        self.time_steps, self.num_freqs = get_stft_shape(
-            sample_rate, snippet_length, time_steps)
+    def __init__(self, device, model=None, sample_rate=22050, bpm=120, entropy_size=10, num_beats=8, lr=0.0001):
+        super(ConvolutionalGenerator, self).__init__(device)
+        snippet_length = num_beats / (bpm / 60)
+        self.num_beats, self.num_freqs = get_stft_shape(
+            sample_rate, snippet_length, num_beats)
         self.sample_rate = sample_rate
         self.snippet_length = snippet_length
-        self.time_steps = time_steps
         self.entropy_size = entropy_size
 
         self.model = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=self.entropy_size, out_channels=8, kernel_size=2, padding=0, stride=1),
+            nn.ConvTranspose2d(in_channels=self.entropy_size,
+                               out_channels=8, kernel_size=2, padding=0, stride=1),
             nn.BatchNorm2d(8),
             nn.LeakyReLU(0.2, inplace=True),
 
-            nn.ConvTranspose2d(in_channels=8, out_channels=6, kernel_size=2, padding=0, stride=1),
+            nn.ConvTranspose2d(in_channels=8, out_channels=6,
+                               kernel_size=2, padding=0, stride=1),
             nn.BatchNorm2d(6),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout(0.5),
 
-            nn.ConvTranspose2d(in_channels=6, out_channels=4, kernel_size=2, padding=0, stride=1),
+            nn.ConvTranspose2d(in_channels=6, out_channels=4,
+                               kernel_size=2, padding=0, stride=1),
             nn.BatchNorm2d(4),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout(0.5),
 
-            nn.ConvTranspose2d(in_channels=4, out_channels=2, kernel_size=2, padding=0, stride=1),
+            nn.ConvTranspose2d(in_channels=4, out_channels=2,
+                               kernel_size=2, padding=0, stride=1),
             nn.BatchNorm2d(2),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout(0.5),
             nn.Flatten(),
-            nn.Linear(50, 2*self.time_steps*self.num_freqs),
+            nn.Linear(50, 2*self.num_beats*self.num_freqs),
             nn.Tanh()  # frequency amplitudes are normalized
         )
         self.optim = optim.Adam(self.parameters(), lr=lr)
@@ -67,16 +116,17 @@ class Generator(CustomModel):
 
     def forward(self, z):
         signal = self.model(z)
-        signal = signal.view(*(-1, 2, self.time_steps, self.num_freqs))
+        signal = signal.view(*(-1, 2, self.num_beats, self.num_freqs))
         return signal
 
     def generate_data(self, num_samples, device, train=False):
         if not train:
-            data = self(Variable(torch.randn(num_samples, self.entropy_size, 1, 1)).to(device)).detach()
+            data = self(Variable(torch.randn(
+                num_samples, self.entropy_size, 1)).to(device)).detach()
         else:
-            data =  self(Variable(torch.randn(num_samples, self.entropy_size, 1, 1)).to(device))
+            data = self(Variable(torch.randn(
+                num_samples, self.entropy_size, 1)).to(device))
         return data
-
 
 
 class Discriminator(CustomModel):
@@ -89,26 +139,37 @@ class Discriminator(CustomModel):
 
         self.cnn_layers = nn.Sequential(
             nn.Conv2d(in_channels=2, out_channels=4,
-                      kernel_size=(1, 11), stride=(1, 4), padding=(0, 0)),
+                      kernel_size=(4, 13), stride=(1, 4), padding=(2, 0)),
             nn.BatchNorm2d(4),
             nn.LeakyReLU(0.2, inplace=True),
             #nn.AvgPool2d(kernel_size=2, stride=2),
 
             nn.Conv2d(in_channels=4, out_channels=6,
-                      kernel_size=(5, 5), stride=(1, 2), padding=(0,2)),
+                      kernel_size=(4, 10), stride=(1, 2), padding=(2, 0)),
             nn.BatchNorm2d(6),
             nn.LeakyReLU(0.2, inplace=True),
             #nn.AvgPool2d(kernel_size=2, stride=2),
 
             nn.Conv2d(in_channels=6, out_channels=8,
-                      kernel_size=(4, 4), stride=(2, 2), padding=(1, 1)),
+                      kernel_size=(4, 4), stride=(1, 2), padding=(2, 0)),
             nn.BatchNorm2d(8),
             nn.LeakyReLU(0.2, inplace=True),
             #nn.AvgPool2d(kernel_size=2, stride=2),
-            )
+            nn.Conv2d(in_channels=8, out_channels=10,
+                      kernel_size=(4, 4), stride=(1, 2), padding=(2, 0)),
+            nn.BatchNorm2d(10),
+            nn.LeakyReLU(0.2, inplace=True),
+            #nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(in_channels=10, out_channels=12,
+                      kernel_size=(4, 4), stride=(1, 2), padding=(2, 0)),
+            nn.BatchNorm2d(12),
+            nn.LeakyReLU(0.2, inplace=True),
+            #nn.AvgPool2d(kernel_size=2, stride=2),
+        )
 
         self.linear_layers = nn.Sequential(
-            nn.Linear(8 * 30 * 430, 1), # Depth x height x width
+            # nn.Linear(8 * 30 * 430, 1), # Depth x height x width
+            nn.Linear(12 * 13 * 457, 1),  # Depth x height x width
             nn.Sigmoid()
         )
 

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 import librosa
 import numpy as np
 # own
-from gann import Generator, Discriminator
+from gann import ConvolutionalGenerator, LinearGenerator, Discriminator
 from dataset import AudioSnippetDataset
 from helpers import visualize_sample
 
@@ -40,23 +40,30 @@ A Generative Adversarial Network for generating music samples.
 """
 
 
-def train(data_loader, epochs, entropy_size, models, visual):
+def train(generator_type, data_loader, epochs, entropy_size, models, visual):
     logger.debug("Initializing training...")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     batch_size = data_loader.batch_size
-    
-    discriminator = Discriminator(device, model=models[0] if models else None, lr=0.0001)
 
-    generator = Generator(device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0001)
-    L1_lambda = 100 # 0.0001
+    discriminator = Discriminator(
+        device, model=models[0] if models else None, lr=0.0001)
 
-    dim4d = lambda a, b, c, d: a*b*c*d
+    if generator_type is "conv":
+        generator = ConvolutionalGenerator(
+            device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0001)
+    else:
+        generator = LinearGenerator(
+            device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0005)
+    L1_lambda = 100  # 0.0001
+
+    def dim4d(a, b, c, d): return a*b*c*d
 
     losses = []
     fake_losses = []
     gen_losses = []
     logger.debug("Init done")
-    logger.debug("Starting training with {} samples and {} epochs".format(len(train_data), epochs))
+    logger.debug("Starting training with {} samples and {} epochs".format(
+        len(train_data), epochs))
     for epoch in range(epochs):
         logger.debug("Epoch: {} of {}".format(epoch, epochs))
 
@@ -73,7 +80,8 @@ def train(data_loader, epochs, entropy_size, models, visual):
                 visualize_sample(data.cpu())
             discriminator.optim.zero_grad()
             out = discriminator(data)
-            label = Variable(0.7 + 0.3 * torch.rand(len(out), 1)).to(device) # make labels noisy (real: 0.7-1.2)
+            # make labels noisy (real: 0.7-1.2)
+            label = Variable(0.7 + 0.3 * torch.rand(len(out), 1)).to(device)
             #acc = len(out[out>=0.5])/len(out)
             loss = discriminator.loss(out, label).to(device)
             loss.backward()
@@ -82,7 +90,8 @@ def train(data_loader, epochs, entropy_size, models, visual):
             if visual:
                 visualize_sample(fake_data.cpu())
             #fake_acc = len(out[out<0.5])/len(out)
-            label = Variable(0.3 * torch.rand(len(out), 1)).to(device) # make labels noisy (fake: 0-0.3)
+            # make labels noisy (fake: 0-0.3)
+            label = Variable(0.3 * torch.rand(len(out), 1)).to(device)
             fake_loss = discriminator.loss(out, label).to(device)
             fake_loss.backward()
             discriminator.optim.step()
@@ -112,7 +121,8 @@ def train(data_loader, epochs, entropy_size, models, visual):
             #acc = len(out[out>=0.5])/len(out)
             # TODO: norm calculation is wrong
             reg_loss = torch.norm(fake_data, p=1)/dim4d(*fake_data.shape)
-            gen_loss = generator.loss(out, Variable(torch.ones([batch_size, 1])).to(device))
+            gen_loss = generator.loss(out, Variable(
+                torch.ones([batch_size, 1])).to(device))
             gen_loss += L1_lambda * reg_loss
             gen_loss.backward()
             generator.optim.step()
@@ -140,13 +150,17 @@ if __name__ == "__main__":
                         help="The size of the entropy vector used as input for the generator (default is 10)", default=10)
     parser.add_argument("--models", dest="models", type=str, nargs=2,
                         help="Pretrained models to use for further training; Discriminator, then Generator (default None)")
+    parser.add_argument("--generator", dest="gen", type=str, default="conv", choices={"conv", "linear"},
+                        help="Which generator to use. Either \"linear\" or \"conv\" (default: \"conv\"")
     parser.add_argument("--visual", dest="visual", action="store_true",
                         help="Whether to show visual representations of the training samples and generated results as images")
     args = parser.parse_args()
-    train_data = AudioSnippetDataset(args.input_data, subset_size=args.subset_size)
+    train_data = AudioSnippetDataset(
+        args.input_data, subset_size=args.subset_size)
     data_loader = DataLoader(train_data, batch_size=args.batch_size,
-                            shuffle=True, num_workers=4)
-    gen, dis = train(data_loader=data_loader, entropy_size=args.entropy_size, epochs=args.epochs, models=args.models, visual=args.visual)
+                             shuffle=True, num_workers=4)
+    gen, dis = train(generator_type=args.gen, data_loader=data_loader, entropy_size=args.entropy_size,
+                     epochs=args.epochs, models=args.models, visual=args.visual)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     generated = gen.generate_data(1, device)
@@ -161,7 +175,8 @@ if __name__ == "__main__":
     model_dir = os.path.join(results_dir, "models")
     if not os.path.exists(model_dir):
         os.mkdir(model_dir)
-    fn_prefix = str(args.epochs) +  "_" + str(args.batch_size) + "_" + str(args.entropy_size) + "_" + str(len(train_data))
+    fn_prefix = str(args.epochs) + "_" + str(args.batch_size) + \
+        "_" + str(args.entropy_size) + "_" + str(len(train_data))
     fn_wav = os.path.join(wav_dir, fn_prefix + ".wav")
     fn_gen_model = os.path.join(model_dir, fn_prefix + "_gen.model")
     fn_dis_model = os.path.join(model_dir, fn_prefix + "_dis.model")
