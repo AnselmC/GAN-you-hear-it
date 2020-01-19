@@ -17,6 +17,7 @@ from helpers import visualize_sample
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging.getLogger("Training")
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 __description__ = r"""
               ____    ______  __  __      __    __
