@@ -17,6 +17,27 @@ from helpers import visualize_sample
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging.getLogger("Training")
 
+__description__ = r"""
+              ____    ______  __  __      __    __
+             /\  _`\ /\  _  \/\ \/\ \    /\ \  /\ \
+             \ \ \L\_\ \ \L\ \ \ `\\ \   \ `\`\\/'/ ___   __  __
+              \ \ \L_L\ \  __ \ \ , ` \   `\ `\ /' / __`\/\ \/\ \
+               \ \ \/, \ \ \/\ \ \ \`\ \    `\ \ \/\ \L\ \ \ \_\ \
+                \ \____/\ \_\ \_\ \_\ \_\     \ \_\ \____/\ \____/
+                 \/___/  \/_/\/_/\/_/\/_/      \/_/\/___/  \/___/
+
+
+           __  __                              ______   __       _
+          /\ \/\ \                            /\__  _\ /\ \__  /'_`\
+          \ \ \_\ \     __     __     _ __    \/_/\ \/ \ \ ,_\/\_\/\`\
+           \ \  _  \  /'__`\ /'__`\  /\`'__\     \ \ \  \ \ \/\/_//'/'
+            \ \ \ \ \/\  __//\ \L\.\_\ \ \/       \_\ \__\ \ \_  /\_\
+             \ \_\ \_\ \____\ \__/.\_\\ \_\       /\_____\\ \__\ \/\_\
+              \/_/\/_/\/____/\/__/\/_/ \/_/       \/_____/ \/__/  \/_/
+
+A Generative Adversarial Network for generating music samples.
+"""
+
 
 def train(data_loader, epochs, entropy_size):
     logger.debug("Initializing training...")
@@ -82,6 +103,7 @@ def train(data_loader, epochs, entropy_size):
 
 
 if __name__ == "__main__":
+    print(__description__)
     parser = argparse.ArgumentParser("Trains a GANN on audio signals")
     parser.add_argument("--input_data", dest="input_data", required=True,
                         help="The npz archive with training data created with the `preprocessing.py` script")
