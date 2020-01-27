@@ -76,6 +76,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
     logger.debug("Starting training with {} samples and {} epochs".format(
         len(train_data), epochs))
     for epoch in range(epochs):
+        L1_lambda /= 10
         if visual:
             progress.update_epoch()
         logger.debug("Epoch: {} of {}".format(epoch, epochs))
