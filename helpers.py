@@ -1,12 +1,14 @@
 import os
+import glob
 import datetime
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from torch.utils.tensorboard import SummaryWriter
 from torch import Tensor as tensor
 
 
-def visualize_sample(samples):
+def visualize_sample(samples, plot=True):
     num_samples = len(samples)
     width = int(np.sqrt(num_samples))
     height = int(np.floor(num_samples/width))
@@ -46,29 +48,12 @@ def visualize_sample(samples):
                 row_img = None
     if full_img is None:
         full_img = row_img
-    plt.ion()
-    plt.matshow(full_img, cmap="coolwarm", fignum=0)
-#=======
-#def visualize_sample(sample, fignum=0):
-#    real = sample[0][0].detach().numpy()
-#    imag = sample[0][1].detach().numpy()
-#    # Min-max normalization s.t. it can be displayed as imag
-#    real = (real-real.min())/(real.max()-real.min())
-#    imag = (imag-imag.min())/(imag.max()-imag.min())
-#
-#    x, y = real.shape
-#    x_factor = (y // np.sqrt(x*y)).astype(int)
-#    new_x = x * x_factor
-#    new_y = (x*y) // new_x
-#    real = real[:, :new_y*x_factor]
-#    imag = imag[:, :new_y*x_factor]
-#    real = real.reshape(new_x, new_y)
-#    imag = imag.reshape(new_x, new_y)
-#    plt.ion()
-#    plt.matshow(np.hstack([real, imag]), cmap="coolwarm", fignum=fignum)
-#>>>>>>> 6cbe721f253f1139edc67a3c9edf2f6cc20ded17
-    plt.show()
-    plt.pause(0.0000001)
+    if plot:
+        plt.ion()
+        plt.matshow(full_img, cmap="coolwarm", fignum=0)
+        plt.show()
+        plt.pause(0.0000001)
+    return full_img
 
 
 def get_stft_shape(sample_rate, snippet_length, time_steps):
@@ -99,6 +84,26 @@ def save_as_time_signal(stft_signal, output_file, sr=22050):
         stft_signal = stft_signal.detach().numpy()
     time_signal = librosa.istft(stft_signal)
     librosa.output.write(output_file, time_signal, sr)
+
+
+class CustomWriter(SummaryWriter):
+    def __init__(self):
+        parent = "runs"
+        run = len(glob.glob(parent + "/*"))
+        directory = os.path.join(parent, str(run))
+        super(CustomWriter, self).__init__(directory)
+
+    def write_gen_loss(self, loss, step):
+        self.add_scalar("Generator loss", loss, step)
+
+    def write_dis_fake_loss(self, loss, step):
+        self.add_scalar("Discriminator fake loss", loss, step)
+
+    def write_dis_loss(self, loss, step):
+        self.add_scalar("Discriminator loss", loss, step)
+
+    def write_image(self, image):
+        self.add_image("Generated samples", image)
 
 
 class Progress:

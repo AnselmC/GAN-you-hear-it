@@ -14,11 +14,8 @@ import numpy as np
 # own
 from gann import ConvolutionalGenerator, LinearGenerator, Discriminator
 from dataset import AudioSnippetDataset
-from helpers import Progress, visualize_sample
+from helpers import Progress, CustomWriter, visualize_sample
 
-logs_path = "logs/"
-if not os.path.exists(logs_path):
-    os.mkdir(logs_path)
 __description__ = r"""
               ____    ______  __  __      __    __
              /\  _`\ /\  _  \/\ \/\ \    /\ \  /\ \
@@ -43,6 +40,9 @@ A Generative Adversarial Network for generating music samples.
 
 def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_strength, visual):
     if visual:
+        logs_path = "logs/"
+        if not os.path.exists(logs_path):
+            os.mkdir(logs_path)
         timestamp = datetime.datetime.now().strftime(format="%d-%m-%Y-%H%M%S")
         logging.basicConfig(filename=os.path.join(logs_path, timestamp+".log"), level=logging.DEBUG)
         progress = Progress(epochs, len(data_loader), True)
@@ -67,6 +67,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             device, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
     L1_lambda = reg_strength
 
+    writer = CustomWriter()
+
     def dim4d(a, b, c, d): return a*b*c*d
 
     losses = []
@@ -76,7 +78,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
     logger.debug("Starting training with {} samples and {} epochs".format(
         len(train_data), epochs))
     for epoch in range(epochs):
-        L1_lambda /= 10
+        #L1_lambda /= 2
         if visual:
             progress.update_epoch()
         logger.debug("Epoch: {} of {}".format(epoch, epochs))
@@ -118,7 +120,9 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             logger.debug("Fake Loss: {}".format(fake_loss.item()))
             #logger.debug("Fake acc: {}".format(acc))
             running_loss += loss.item()
+            writer.write_dis_loss(loss.item(), epoch * len(data_loader) + step)
             running_fake_loss += fake_loss.item()
+            writer.write_dis_fake_loss(fake_loss.item(), epoch * len(data_loader) + step)
 
         losses.append(running_loss/len(data_loader))
         fake_losses.append(running_fake_loss/len(data_loader))
@@ -149,6 +153,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             gen_loss += L1_lambda * reg_loss
             gen_loss.backward()
             generator.optim.step()
+            writer.write_gen_loss(gen_loss.item(), epoch * len(data_loader) + step)
             if visual:
                 progress.update_batch(gen_loss.item())
             logger.debug("Gen loss: {}".format(gen_loss.item()))
