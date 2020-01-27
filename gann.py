@@ -122,10 +122,10 @@ class ConvolutionalGenerator(CustomModel):
     def generate_data(self, num_samples, device, train=False):
         if not train:
             data = self(Variable(torch.randn(
-                num_samples, self.entropy_size, 1)).to(device)).detach()
+                num_samples, self.entropy_size, 1, 1)).to(device)).detach()
         else:
             data = self(Variable(torch.randn(
-                num_samples, self.entropy_size, 1)).to(device))
+                num_samples, self.entropy_size, 1, 1)).to(device))
         return data
 
 
