@@ -48,7 +48,7 @@ def preprocess_audio(audio_folder, output_folder, target_bpm=120, num_beats=8):
             job = executor.submit(
                 preprocess_single_file, *[f, target_bpm, num_beats])
             jobs[job] = f
-        i = 0
+        i = len(glob(output_folder + "*"))
         for job in concurrent.futures.as_completed(jobs):
             data = job.result()
             file_names = [file_prefix + str(j) for j in range(i, i+len(data))]
@@ -134,21 +134,22 @@ if __name__ == "__main__":
         global_logger.setLevel(logging.INFO)
 
     if os.path.exists(args.output):
-        print("{} already exists. Overwrite? Y(es)/N(o)/C(ancel)".format(args.output))
+        print("{} already exists. (O)verwrite/(A)ppend/(C)ancel".format(args.output))
         user_input = ""
-        while user_input not in ["Y", "y", "N", "n", "C", "c"]:
+        while user_input.lower() not in ["o", "a", "c"]:
             user_input = input()
-            if user_input == "Y":
+            if user_input.lower() == "o":
                 rmtree(args.output)
-            elif user_input == "N":
-                print("Insert new folder name")
-                args.output = input()
-            elif user_input == "C":
+                os.makedirs(args.output)
+            elif user_input.lower() == "a":
+                print("Appending to existing folder...")
+            elif user_input.lower() == "c":
                 print("Exiting")
                 exit()
             else:
-                print("Did not understand {}. Please use Y/N/C".format(user_input))
-    os.makedirs(args.output)
+                print("Did not understand {}. Please use O/A/C".format(user_input))
+    else:
+        os.makedirs(args.output)
 
 
 
