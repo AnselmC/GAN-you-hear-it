@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from torch import Tensor as tensor
 
 
-def visualize_sample(sample):
+def visualize_sample(sample, fignum=0):
     real = sample[0][0].detach().numpy()
     imag = sample[0][1].detach().numpy()
     # Min-max normalization s.t. it can be displayed as imag
@@ -22,7 +22,7 @@ def visualize_sample(sample):
     real = real.reshape(new_x, new_y)
     imag = imag.reshape(new_x, new_y)
     plt.ion()
-    plt.imshow(np.hstack([real, imag]))
+    plt.matshow(np.hstack([real, imag]), cmap="coolwarm", fignum=fignum)
     plt.show()
     plt.pause(0.0000001)
 
