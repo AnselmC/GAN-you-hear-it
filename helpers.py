@@ -47,7 +47,7 @@ def visualize_sample(samples):
     if full_img is None:
         full_img = row_img
     plt.ion()
-    plt.matshow(full_img, cmap="coolwarm")
+    plt.matshow(full_img, cmap="coolwarm", fignum=0)
 #=======
 #def visualize_sample(sample, fignum=0):
 #    real = sample[0][0].detach().numpy()

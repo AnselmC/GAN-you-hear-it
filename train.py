@@ -47,8 +47,9 @@ A Generative Adversarial Network for generating music samples.
 
 
 def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_strength, visual):
-    progress = Progress(epochs, len(data_loader), True)
-    progress.init_print()
+    if visual:
+        progress = Progress(epochs, len(data_loader), True)
+        progress.init_print()
     logger.debug("Initializing training...")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     batch_size = data_loader.batch_size
@@ -73,7 +74,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
     logger.debug("Starting training with {} samples and {} epochs".format(
         len(train_data), epochs))
     for epoch in range(epochs):
-        progress.update_epoch()
+        if visual:
+            progress.update_epoch()
         logger.debug("Epoch: {} of {}".format(epoch, epochs))
 
         running_loss = 0.0
@@ -94,7 +96,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             #acc = len(out[out>=0.5])/len(out)
             loss = discriminator.loss(out, label).to(device)
             loss.backward()
-            fake_data = generator.generate_data(batch_size, device, train=True)
+            fake_data = generator.generate_data(batch_size, device, train=False)
             if data_loader.dataset.transform:
                 fake_data = data_loader.dataset.transform(fake_data) # non-generated data is transformed
             out = discriminator(fake_data)
@@ -105,7 +107,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             label = Variable(0.3 * torch.rand(len(out), 1)).to(device)
             fake_loss = discriminator.loss(out, label).to(device)
             fake_loss.backward()
-            progress.update_batch(loss.item(), fake_loss.item())
+            if visual:
+                progress.update_batch(loss.item(), fake_loss.item())
             discriminator.optim.step()
             logger.debug("Loss: {}".format(loss.item()))
             #logger.debug("Acc: {}".format(acc))
@@ -123,7 +126,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
         logger.debug("Training generator...")
         discriminator.eval()
         generator.train()
-        progress.switch_to_generator()
+        if visual:
+            progress.switch_to_generator()
         for step in range(len(data_loader)):
             generator.optim.zero_grad()
             logger.debug("Batch: {}/{}".format(step, len(data_loader)))
@@ -140,7 +144,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             gen_loss += L1_lambda * reg_loss
             gen_loss.backward()
             generator.optim.step()
-            progress.update_batch(gen_loss.item())
+            if visual:
+                progress.update_batch(gen_loss.item())
             logger.debug("Gen loss: {}".format(gen_loss.item()))
             #logger.debug("Gen Acc: {}".format(acc))
             running_gen_loss += gen_loss.item()
