@@ -46,7 +46,7 @@ A Generative Adversarial Network for generating music samples.
 """
 
 
-def train(generator_type, data_loader, epochs, entropy_size, models, visual):
+def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_strength, visual):
     progress = Progress(epochs, len(data_loader), True)
     progress.init_print()
     logger.debug("Initializing training...")
@@ -54,15 +54,15 @@ def train(generator_type, data_loader, epochs, entropy_size, models, visual):
     batch_size = data_loader.batch_size
 
     discriminator = Discriminator(
-        device, model=models[0] if models else None, lr=0.0001)
+        device, model=models[0] if models else None, lr=lrs[0])
 
-    if generator_type is "conv":
+    if generator_type == "conv":
         generator = ConvolutionalGenerator(
-            device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0001)
+            device, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
     else:
         generator = LinearGenerator(
-            device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0005)
-    L1_lambda = 100  # 0.0001
+            device, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
+    L1_lambda = reg_strength
 
     def dim4d(a, b, c, d): return a*b*c*d
 
@@ -95,6 +95,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, visual):
             loss = discriminator.loss(out, label).to(device)
             loss.backward()
             fake_data = generator.generate_data(batch_size, device, train=True)
+            if data_loader.dataset.transform:
+                fake_data = data_loader.dataset.transform(fake_data) # non-generated data is transformed
             out = discriminator(fake_data)
             if visual:
                 visualize_sample(fake_data.cpu())
@@ -156,23 +158,28 @@ if __name__ == "__main__":
                         help="The subset size to use from the input folder. Entire folder is used if not given or subset size is larger than folder size")
     parser.add_argument("--epochs", dest="epochs", type=int,
                         help="The number of epochs to train for (default=10)", default=10)
+    parser.add_argument("--reg_strength", dest="reg_strength", type=float,
+                        help="L1 regularization strength for output of generator (enforces sparseness). Default: 10", default=10.)
     parser.add_argument("--batch_size", dest="batch_size", type=int,
                         help="The batch size used during training (default is 4)", default=4)
     parser.add_argument("--entropy_size", dest="entropy_size", type=int,
                         help="The size of the entropy vector used as input for the generator (default is 10)", default=10)
+    parser.add_argument("--lr", dest="lr", type=float, nargs=2,
+                        help="Learning rates to use for discriminator and generator, respectively (defaults are 0.0002 and 0.0001)", default=[0.0002, 0.0001])
     parser.add_argument("--models", dest="models", type=str, nargs=2,
-                        help="Pretrained models to use for further training; Discriminator, then Generator (default None)")
+                        help="Pretrained models to use for further training; Discriminator, then Generator (default None)") 
     parser.add_argument("--generator", dest="gen", type=str, default="conv", choices={"conv", "linear"},
                         help="Which generator to use. Either \"linear\" or \"conv\" (default: \"conv\"")
     parser.add_argument("--visual", dest="visual", action="store_true",
                         help="Whether to show visual representations of the training samples and generated results as images")
     args = parser.parse_args()
+    
     train_data = AudioSnippetDataset(
         args.input_data, subset_size=args.subset_size)
     data_loader = DataLoader(train_data, batch_size=args.batch_size,
                              shuffle=True, num_workers=4)
     gen, dis = train(generator_type=args.gen, data_loader=data_loader, entropy_size=args.entropy_size,
-                     epochs=args.epochs, models=args.models, visual=args.visual)
+                     epochs=args.epochs, models=args.models, lrs=args.lr, reg_strength=args.reg_strength, visual=args.visual)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     generated = gen.generate_data(1, device)
