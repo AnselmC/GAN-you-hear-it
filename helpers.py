@@ -3,23 +3,48 @@ import matplotlib.pyplot as plt
 from torch import Tensor as tensor
 
 
-def visualize_sample(sample):
-    real = sample[0][0].detach().numpy()
-    imag = sample[0][1].detach().numpy()
-    # Min-max normalization s.t. it can be displayed as imag
-    real = (real-real.min())/(real.max()-real.min())
-    imag = (imag-imag.min())/(imag.max()-imag.min())
+def visualize_sample(samples):
+    num_samples = len(samples)
+    width = int(np.sqrt(num_samples))
+    height = int(np.floor(num_samples/width))
+    full_img = None
+    row_img = None
+    width_counter = 0
+    for i, sample in enumerate(samples):
+        if i >= height * width:
+            break
+        real = sample[0].detach().numpy()
+        imag = sample[1].detach().numpy()
+        # Min-max normalization s.t. it can be displayed as imag
+        real = (real-real.min())/(real.max()-real.min())
+        imag = (imag-imag.min())/(imag.max()-imag.min())
 
-    x, y = real.shape
-    x_factor = (y // np.sqrt(x*y)).astype(int)
-    new_x = x * x_factor
-    new_y = (x*y) // new_x
-    real = real[:, :new_y*x_factor]
-    imag = imag[:, :new_y*x_factor]
-    real = real.reshape(new_x, new_y)
-    imag = imag.reshape(new_x, new_y)
+        x, y = real.shape
+        x_factor = (y // np.sqrt(x*y)).astype(int)
+        new_x = x * x_factor
+        new_y = (x*y) // new_x
+        real = real[:, :new_y*x_factor]
+        imag = imag[:, :new_y*x_factor]
+        real = real.reshape(new_x, new_y)
+        imag = imag.reshape(new_x, new_y)
+        img = np.hstack([real, imag])
+        if row_img is None:
+            row_img = img
+        else:
+            if width_counter <= width:
+                row_img = np.hstack([row_img, img])
+                width_counter += 1
+            else:
+                width_counter = 0
+                if full_img is None:
+                    full_img = row_img
+                else:
+                    full_img = np.vstack([full_img, row_img])
+                row_img = None
+    if full_img is None:
+        full_img = row_img
     plt.ion()
-    plt.imshow(np.hstack([real, imag]))
+    plt.imshow(full_img)
     plt.show()
     plt.pause(0.0000001)
 
