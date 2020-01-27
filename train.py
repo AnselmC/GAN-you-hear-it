@@ -47,15 +47,15 @@ def train(generator_type, data_loader, epochs, entropy_size, models, visual):
     batch_size = data_loader.batch_size
 
     discriminator = Discriminator(
-        device, model=models[0] if models else None, lr=0.0001)
+        device, model=models[0] if models else None, lr=0.0002)
 
     if generator_type is "conv":
         generator = ConvolutionalGenerator(
-            device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0001)
+            device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.00005)
     else:
         generator = LinearGenerator(
-            device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.0005)
-    L1_lambda = 100  # 0.0001
+            device, model=models[1] if models else None, entropy_size=entropy_size, lr=0.00005)
+    L1_lambda = 10  # 0.0001
 
     def dim4d(a, b, c, d): return a*b*c*d
 
@@ -122,6 +122,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, visual):
             #acc = len(out[out>=0.5])/len(out)
             # TODO: norm calculation is wrong
             reg_loss = torch.norm(fake_data, p=1)/dim4d(*fake_data.shape)
+            logger.debug("Reg loss: {}".format(L1_lambda * reg_loss))
             gen_loss = generator.loss(out, Variable(
                 torch.ones([batch_size, 1])).to(device))
             gen_loss += L1_lambda * reg_loss
