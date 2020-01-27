@@ -79,7 +79,7 @@ def preprocess_single_file(f, target_bpm, num_beats):
     n_fft = (num_beats-1) * 2
     signal, sr = librosa.load(f)
     fname = f.split("/")[-1]
-    logger = logging.getLogger(fname[:5] + "..." + fname[-5:]) 
+    logger = logging.getLogger(fname[:5] + "..." + fname[-10:-4]) 
     logger.debug("Loaded {}".format(f))
     logger.debug("Sample rate is {}".format(sr))
     tempo, beat_frames = librosa.beat.beat_track(signal, sr=sr)
@@ -104,8 +104,8 @@ def preprocess_single_file(f, target_bpm, num_beats):
         logger.debug("Target sample rate: {}".format(target_sr))
         split = librosa.resample(split, sr, target_sr, fix=True)
         if len(split) != target_len_secs * sr:
-            logger.debug("Split has wrong length {}. Should be {}".format(len(split/sr), target_len_secs))
-            continue
+            logger.debug("Split has wrong length {}. Should be {}".format(len(split), target_len_secs * sr))
+            split = split[:int(target_len_secs * sr)]
         transformed = librosa.stft(split, n_fft)
         data.append(transformed)
     logger.debug("Finished processing of {} with {} snippets".format(f, len(data)))
