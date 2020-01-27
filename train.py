@@ -19,11 +19,6 @@ from helpers import Progress, visualize_sample
 logs_path = "logs/"
 if not os.path.exists(logs_path):
     os.mkdir(logs_path)
-timestamp = datetime.datetime.now().strftime(format="%d-%m-%Y-%H%M%S")
-logging.basicConfig(filename=os.path.join(logs_path, timestamp+".log"), level=logging.DEBUG)
-logger = logging.getLogger("Training")
-logging.getLogger("matplotlib").setLevel(logging.WARNING)
-
 __description__ = r"""
               ____    ______  __  __      __    __
              /\  _`\ /\  _  \/\ \/\ \    /\ \  /\ \
@@ -48,8 +43,15 @@ A Generative Adversarial Network for generating music samples.
 
 def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_strength, visual):
     if visual:
+        timestamp = datetime.datetime.now().strftime(format="%d-%m-%Y-%H%M%S")
+        logging.basicConfig(filename=os.path.join(logs_path, timestamp+".log"), level=logging.DEBUG)
         progress = Progress(epochs, len(data_loader), True)
         progress.init_print()
+    else:
+        logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+    logger = logging.getLogger("Training")
+    logging.getLogger("matplotlib").setLevel(logging.WARNING)
+
     logger.debug("Initializing training...")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     batch_size = data_loader.batch_size
