@@ -132,9 +132,11 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             generator.optim.zero_grad()
             logger.debug("Batch: {}/{}".format(step, len(data_loader)))
             fake_data = generator.generate_data(batch_size, device, train=True)
+            if data_loader.dataset.transform:
+                fake_data_transformed = data_loader.dataset.transform(fake_data) # non-generated data is transformed
             if visual:
-                visualize_sample(fake_data.cpu())
-            out = discriminator(fake_data)
+                visualize_sample(fake_data_transformed.cpu())
+            out = discriminator(fake_data_transformed)
             #acc = len(out[out>=0.5])/len(out)
             # TODO: norm calculation is wrong
             reg_loss = torch.norm(fake_data, p=1)/dim4d(*fake_data.shape)
