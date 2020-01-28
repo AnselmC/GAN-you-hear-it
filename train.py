@@ -51,25 +51,28 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
         logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
     logger = logging.getLogger("Training")
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
-
     logger.debug("Initializing training...")
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     batch_size = data_loader.batch_size
+    # TODO: train data in namespace, but should be clearly defined
+    shape = train_data[0].shape
+    sample_h, sample_w = shape[1], shape[2]
 
     discriminator = Discriminator(
-        device, model=models[0] if models else None, lr=lrs[0])
+        device, input_h=sample_h, input_w=sample_w, model=models[0] if models else None, lr=lrs[0])
 
-    writer = CustomWriter(os.path.join("runs", str(timestamp)), comment="conv" if generator_type=="conv" else "linear")
+    writer = CustomWriter(os.path.join("runs", str(epochs), str(batch_size), str(sample_h) + "_" + str(sample_w), str(timestamp)), comment="conv" if generator_type=="conv" else "linear")
     if generator_type == "conv":
         generator = ConvolutionalGenerator(
-            device, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
+            device, output_h=sample_h, output_w=sample_w, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
         writer.add_graph(generator, torch.randn(1, entropy_size, 1, 1).to(device), False)
     else:
         generator = LinearGenerator(
-            device, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
+            device, output_h=sample_h, output_w=sample_w, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
         writer.add_graph(generator, torch.randn(1, entropy_size).to(device), False)
 
-    writer.add_graph(discriminator, generator.generate_data(1, device, train=False), True)
+    writer.add_graph(discriminator, generator.generate_data(1, device, train=False), False)
 
     L1_lambda = reg_strength
     def dim4d(a, b, c, d): return a*b*c*d
@@ -145,8 +148,9 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             if data_loader.dataset.transform:
                 fake_data_transformed = data_loader.dataset.transform(fake_data) # non-generated data is transformed
             if(epoch * len(data_loader) + step % 100 == 0):
+                logger.debug("Writing generated sample...")
                 writer.write_image(visualize_sample(fake_data_transformed.cpu(), plot=visual), epoch * len(data_loader) + step)
-                writer.write_audio(fake_data_transformed[0], epoch * len(data_loader) + step)
+                writer.write_audio(fake_data_transformed.cpu()[0], epoch * len(data_loader) + step)
             out = discriminator(fake_data_transformed)
             #acc = len(out[out>=0.5])/len(out)
             # TODO: norm calculation is wrong

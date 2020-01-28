@@ -21,13 +21,14 @@ logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 global_logger = logging.getLogger("Preprocessor")
 
 
-def preprocess_audio(audio_folder, output_folder, target_bpm=120, num_beats=8):
+def preprocess_audio(audio_folder, output_folder, target_bpm=120, num_beats=8, num_steps=8):
     """Preprocesses a folder of audio files (`.wav`, `.mp3`, `.mp4`, `.m4a`) and generates a `.npy` file with snippets of the files in Short-Time Fourier space
 
     :param audio_folder: Path to the folder containing `.wav` files
     :param output_folder: Pathname of file to save results to
     :param target_bpm: the BPM that each audio file should be stretched to (default: 120)
     :param num_beats: the number of beats that each sample should have (default: 8)
+    :param num_steps: the number of steps to divide each sample into for STFT (default: 8)
 
     ..note:: Files are processed in separate threads
     """
@@ -46,7 +47,7 @@ def preprocess_audio(audio_folder, output_folder, target_bpm=120, num_beats=8):
         for f in files:
             global_logger.debug("Added {} to process queue".format(f))
             job = executor.submit(
-                preprocess_single_file, *[f, target_bpm, num_beats])
+                preprocess_single_file, *[f, target_bpm, num_beats, num_steps])
             jobs[job] = f
         i = len(glob(output_folder + "*"))
         for job in concurrent.futures.as_completed(jobs):
@@ -66,17 +67,18 @@ def preprocess_audio(audio_folder, output_folder, target_bpm=120, num_beats=8):
     global_logger.debug("Generated {} training samples".format(i))
 
 
-def preprocess_single_file(f, target_bpm, num_beats):
+def preprocess_single_file(f, target_bpm, num_beats, num_steps):
     """Takes a single audio file (`.mp3`, `.mp4`, `.m4a`, `.wav`) filename, stretches it to match a target bpm, splits it into snippets of num_beats, and runs the Short-Time Fourier Transform on each snippet.
 
     :param f: The pathname of the audio file.
     :param target_bpm: the tempo that the track should be stretched to
-    :param num_beats: the number of beats every snippet should contain (STFT will then be applied to every beat)
+    :param num_beats: the number of beats every snippet should contain
+    :param num_step: the number of steps in the STFT
     :returns: A list containing the STFT matrices for each snippet
     :rtype: list(numpy.array)
 
     """
-    n_fft = (num_beats-1) * 2
+    n_fft = (num_steps-1) * 2
     signal, sr = librosa.load(f)
     fname = f.split("/")[-1]
     logger = logging.getLogger(fname[:5] + "..." + fname[-10:-4]) 
@@ -120,6 +122,8 @@ if __name__ == "__main__":
                         help="The folder containing the audio files.")
     parser.add_argument("-o, --output_folder", dest="output", type=str, default="training_data",
                         help="The folder to save the training data (default is training_data)")
+    parser.add_argument("-s, --num_steps", dest="steps", type=int, default=8,
+                        help="The number of steps per snippet (default: 8)")
     parser.add_argument("-b, --num_beats", dest="beats", type=int, default=8,
                         help="The number of beats per snippet (default: 8)")
     parser.add_argument("-t, --tempo", dest="bpm", type=int, default=120,
@@ -156,6 +160,6 @@ if __name__ == "__main__":
     print("\n\nStarting preprocessing...")
     start = time.time()
     preprocess_audio(args.input, args.output,
-                     args.bpm, args.beats)
+                     args.bpm, args.beats, args.steps)
     print("Finished processing files")
     print("Processing took {:.2f} s".format(time.time() - start))

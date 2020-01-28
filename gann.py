@@ -6,6 +6,12 @@ from torch.autograd import Variable
 from helpers import get_stft_shape
 
 
+def compute_conv_output_dim(input_h, input_w, kernel_size, padding, stride):
+    output_h = int(((input_h - kernel_size[0] + 2 * padding[0])/stride[0]) + 1)
+    output_w = int(((input_w - kernel_size[1] + 2 * padding[1])/stride[1]) + 1)
+    return output_h, output_w
+
+
 class CustomModel(nn.Module):
     def __init__(self, device):
         super(CustomModel, self).__init__()
@@ -20,13 +26,11 @@ class CustomModel(nn.Module):
 
 
 class LinearGenerator(CustomModel):
-    def __init__(self, device, model=None, sample_rate=22050, bpm=120, entropy_size=128, num_beats=8, lr=0.0001):
+    def __init__(self, device, output_h, output_w, model=None, entropy_size=10, lr=0.0001):
         super(LinearGenerator, self).__init__(device)
-        snippet_length = num_beats / (bpm / 60)
-        self.num_beats, self.num_freqs = get_stft_shape(
-            sample_rate, snippet_length, num_beats)
-        self.sample_rate = sample_rate
-        self.snippet_length = snippet_length
+        self.output_h = output_h
+        self.output_w = output_w
+        self.entropy_size = entropy_size
         self.entropy_size = entropy_size
 
         def ganlayer(input_dim, output_dim, dropout=True):
@@ -41,7 +45,7 @@ class LinearGenerator(CustomModel):
             *ganlayer(32, 64),
             *ganlayer(64, 128),
             *ganlayer(128, 256),
-            nn.Linear(256, 2 * self.num_beats * self.num_freqs),
+            nn.Linear(256, 2 * self.output_h * self.output_w),
             nn.Tanh()
         )
         self.optim = optim.Adam(self.parameters(), lr=lr)
@@ -51,7 +55,7 @@ class LinearGenerator(CustomModel):
 
     def forward(self, x):
         x = self.model(x)
-        x = x.view(*(-1, 2, self.num_beats, self.num_freqs))
+        x = x.view(*(-1, 2, self.output_h, self.output_w))
         return x
 
     def generate_data(self, num_samples, device, train=False):
@@ -73,13 +77,10 @@ class ConvolutionalGenerator(CustomModel):
     :param num_beats: the number of time steps in the Short-Time Fourier representation of the signal
     """
 
-    def __init__(self, device, model=None, sample_rate=22050, bpm=120, entropy_size=10, num_beats=8, lr=0.0001):
+    def __init__(self, device, output_h, output_w, model=None, entropy_size=10, lr=0.0001):
         super(ConvolutionalGenerator, self).__init__(device)
-        snippet_length = num_beats / (bpm / 60)
-        self.num_beats, self.num_freqs = get_stft_shape(
-            sample_rate, snippet_length, num_beats)
-        self.sample_rate = sample_rate
-        self.snippet_length = snippet_length
+        self.output_h = output_h
+        self.output_w = output_w
         self.entropy_size = entropy_size
 
         self.model = nn.Sequential(
@@ -106,7 +107,7 @@ class ConvolutionalGenerator(CustomModel):
             nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout(0.5),
             nn.Flatten(),
-            nn.Linear(50, 2*self.num_beats*self.num_freqs),
+            nn.Linear(50, 2*self.output_w*self.output_h),
             nn.Tanh()  # frequency amplitudes are normalized
         )
         self.optim = optim.Adam(self.parameters(), lr=lr)
@@ -116,7 +117,7 @@ class ConvolutionalGenerator(CustomModel):
 
     def forward(self, z):
         signal = self.model(z)
-        signal = signal.view(*(-1, 2, self.num_beats, self.num_freqs))
+        signal = signal.view(*(-1, 2, self.output_h, self.output_w))
         return signal
 
     def generate_data(self, num_samples, device, train=False):
@@ -134,52 +135,62 @@ class Discriminator(CustomModel):
 
     """
 
-    def __init__(self, device, model=None, lr=0.0001, momentum=0.9):
+    CONFIG = {"num_layers": 5,
+              "in_channels": [2, 4, 6, 8, 10],
+              "out_channels": [4, 6, 8, 10, 12],
+              "kernels": [(4, 13), (4, 10), (4, 4), (4, 4), (4, 4)],
+              "strides": [(1, 4), (1, 2), (1, 2), (1, 2), (1, 2)],
+              "paddings": [(2, 0), (2, 0), (2, 0), (2, 0), (2, 0)],
+              "relu_params": [0.2, 0.2, 0.2, 0.2, 0.2]
+              }
+
+    @staticmethod
+    def conv_layer(in_channels, out_channels, kernel_size, stride, padding, relu_param):
+        layer = [nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
+                           kernel_size=kernel_size, stride=stride, padding=padding)]
+        layer.append(nn.BatchNorm2d(out_channels))
+        layer.append(nn.LeakyReLU(relu_param, inplace=True))
+        return layer
+
+    @staticmethod
+    def build_cnn_layers(config, input_h, input_w):
+        num_layers = config["num_layers"]
+        model = []
+        output_h = input_h
+        output_w = input_w
+        output_c = config["out_channels"][-1]
+        for i in range(num_layers):
+            in_channels = config["in_channels"][i]
+            out_channels = config["out_channels"][i]
+            kernel_size = config["kernels"][i]
+            stride = config["strides"][i]
+            padding = config["paddings"][i]
+            relu_param = config["relu_params"][i]
+            layer = Discriminator.conv_layer(in_channels, out_channels,
+                               kernel_size, stride, padding, relu_param)
+            model += layer
+            output_h, output_w = compute_conv_output_dim(
+                output_h, output_w, kernel_size, padding, stride)
+        output_size = output_h * output_w * output_c
+        return nn.Sequential(*model), output_size
+
+    def __init__(self, device, input_h, input_w, model = None, lr = 0.0001, momentum = 0.9, config = CONFIG):
         super(Discriminator, self).__init__(device)
 
-        self.cnn_layers = nn.Sequential(
-            nn.Conv2d(in_channels=2, out_channels=4,
-                      kernel_size=(4, 13), stride=(1, 4), padding=(2, 0)),
-            nn.BatchNorm2d(4),
-            nn.LeakyReLU(0.2, inplace=True),
-            #nn.AvgPool2d(kernel_size=2, stride=2),
-
-            nn.Conv2d(in_channels=4, out_channels=6,
-                      kernel_size=(4, 10), stride=(1, 2), padding=(2, 0)),
-            nn.BatchNorm2d(6),
-            nn.LeakyReLU(0.2, inplace=True),
-            #nn.AvgPool2d(kernel_size=2, stride=2),
-
-            nn.Conv2d(in_channels=6, out_channels=8,
-                      kernel_size=(4, 4), stride=(1, 2), padding=(2, 0)),
-            nn.BatchNorm2d(8),
-            nn.LeakyReLU(0.2, inplace=True),
-            #nn.AvgPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(in_channels=8, out_channels=10,
-                      kernel_size=(4, 4), stride=(1, 2), padding=(2, 0)),
-            nn.BatchNorm2d(10),
-            nn.LeakyReLU(0.2, inplace=True),
-            #nn.AvgPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(in_channels=10, out_channels=12,
-                      kernel_size=(4, 4), stride=(1, 2), padding=(2, 0)),
-            nn.BatchNorm2d(12),
-            nn.LeakyReLU(0.2, inplace=True),
-            #nn.AvgPool2d(kernel_size=2, stride=2),
-        )
-
-        self.linear_layers = nn.Sequential(
-            # nn.Linear(8 * 30 * 430, 1), # Depth x height x width
-            nn.Linear(12 * 13 * 457, 1),  # Depth x height x width
+        self.cnn_layers, output_dim=Discriminator.build_cnn_layers(
+            config, input_h, input_w)
+        self.linear_layers=nn.Sequential(
+            nn.Linear(int(output_dim), 1),
             nn.Sigmoid()
         )
 
-        self.optim = optim.SGD(self.parameters(), lr=lr, momentum=momentum)
-        self.loss = nn.BCELoss()
+        self.optim=optim.SGD(self.parameters(), lr = lr, momentum = momentum)
+        self.loss=nn.BCELoss()
         self.load(model)
         self.to(device)
 
     def forward(self, x):
-        x = self.cnn_layers(x)
-        x = x.view(x.size(0), -1)
-        x = self.linear_layers(x)
+        x=self.cnn_layers(x)
+        x=x.view(x.size(0), -1)
+        x=self.linear_layers(x)
         return x
