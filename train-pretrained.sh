@@ -12,6 +12,8 @@ ENTROPY_SIZE_LINEAR=128
 REG_STRENGTH=10
 DIS_LR=0.0001
 GEN_LR=0.00015
+DIS_MODEL='results/models/100_16_10_1_dis.model'
+GEN_MODEL='results/models/100_16_10_1_gen.model'
 ENTROPY_SIZE=$(($GENERATOR = $LINEAR ? $ENTROPY_SIZE_LINEAR : $ENTROPY_SIZE_CONV))
 
 python3 train.py --input $INPUT \
@@ -22,4 +24,5 @@ python3 train.py --input $INPUT \
                  --generator $GENERATOR \
                  --lr $DIS_LR $GEN_LR \
                  --reg_strength $REG_STRENGTH \
+                 --model $DIS_MODEL $GEN_MODEL \
                  --visual
