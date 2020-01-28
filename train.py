@@ -14,7 +14,7 @@ import numpy as np
 # own
 from gann import ConvolutionalGenerator, LinearGenerator, Discriminator
 from dataset import AudioSnippetDataset
-from helpers import Progress, CustomWriter, visualize_sample
+from helpers import Progress, CustomWriter, visualize_sample, convert_sample_to_time_signal
 
 __description__ = r"""
               ____    ______  __  __      __    __
@@ -39,11 +39,11 @@ A Generative Adversarial Network for generating music samples.
 
 
 def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_strength, visual):
+    timestamp = datetime.datetime.now().strftime(format="%d-%m-%Y-%H%M%S")
     if visual:
         logs_path = "logs/"
         if not os.path.exists(logs_path):
             os.mkdir(logs_path)
-        timestamp = datetime.datetime.now().strftime(format="%d-%m-%Y-%H%M%S")
         logging.basicConfig(filename=os.path.join(logs_path, timestamp+".log"), level=logging.DEBUG)
         progress = Progress(epochs, len(data_loader), True)
         progress.init_print()
@@ -59,16 +59,19 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
     discriminator = Discriminator(
         device, model=models[0] if models else None, lr=lrs[0])
 
+    writer = CustomWriter(os.path.join("runs", str(timestamp)), comment="conv" if generator_type=="conv" else "linear")
     if generator_type == "conv":
         generator = ConvolutionalGenerator(
             device, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
+        writer.add_graph(generator, torch.randn(1, entropy_size, 1, 1).to(device), False)
     else:
         generator = LinearGenerator(
             device, model=models[1] if models else None, entropy_size=entropy_size, lr=lrs[1])
+        writer.add_graph(generator, torch.randn(1, entropy_size).to(device), False)
+
+    writer.add_graph(discriminator, generator.generate_data(1, device, train=False), True)
+
     L1_lambda = reg_strength
-
-    writer = CustomWriter()
-
     def dim4d(a, b, c, d): return a*b*c*d
 
     losses = []
@@ -93,7 +96,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             data = data.to(device)
             logger.debug("Batch: {}/{}".format(step, len(data_loader)))
             if visual:
-                visualize_sample(data.cpu())
+                visualize_sample(data.cpu(), plot=True)
             discriminator.optim.zero_grad()
             out = discriminator(data)
             # make labels noisy (real: 0.7-1.2)
@@ -106,7 +109,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
                 fake_data = data_loader.dataset.transform(fake_data) # non-generated data is transformed
             out = discriminator(fake_data)
             if visual:
-                visualize_sample(fake_data.cpu())
+                visualize_sample(fake_data.cpu(), plot=True)
             #fake_acc = len(out[out<0.5])/len(out)
             # make labels noisy (fake: 0-0.3)
             label = Variable(0.3 * torch.rand(len(out), 1)).to(device)
@@ -141,12 +144,14 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
             fake_data = generator.generate_data(batch_size, device, train=True)
             if data_loader.dataset.transform:
                 fake_data_transformed = data_loader.dataset.transform(fake_data) # non-generated data is transformed
-            if visual:
-                visualize_sample(fake_data_transformed.cpu())
+            if(epoch * len(data_loader) + step % 100 == 0):
+                writer.write_image(visualize_sample(fake_data_transformed.cpu(), plot=visual), epoch * len(data_loader) + step)
+                writer.write_audio(fake_data_transformed[0], epoch * len(data_loader) + step)
             out = discriminator(fake_data_transformed)
             #acc = len(out[out>=0.5])/len(out)
             # TODO: norm calculation is wrong
             reg_loss = torch.norm(fake_data, p=1)/dim4d(*fake_data.shape)
+            writer.write_gen_reg_loss(L1_lambda * reg_loss.item(), epoch * len(data_loader) + step)
             logger.debug("Reg loss: {}".format(L1_lambda * reg_loss))
             gen_loss = generator.loss(out, Variable(
                 torch.ones([batch_size, 1])).to(device))
@@ -162,6 +167,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs, reg_st
         gen_losses.append(running_gen_loss/len(data_loader))
         logger.debug("Running generator loss: {}".format(gen_losses[-1]))
 
+    writer.close()
     return generator, discriminator
 
 
@@ -197,10 +203,6 @@ if __name__ == "__main__":
     gen, dis = train(generator_type=args.gen, data_loader=data_loader, entropy_size=args.entropy_size,
                      epochs=args.epochs, models=args.models, lrs=args.lr, reg_strength=args.reg_strength, visual=args.visual)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    generated = gen.generate_data(1, device)
-    out = generated.squeeze(0).cpu().detach().numpy()
-    out_complex = out[0] + 1j*out[1]
     results_dir = "results"
     if not os.path.exists(results_dir):
         os.mkdir(results_dir)
@@ -215,7 +217,10 @@ if __name__ == "__main__":
     fn_wav = os.path.join(wav_dir, fn_prefix + ".wav")
     fn_gen_model = os.path.join(model_dir, fn_prefix + "_gen.model")
     fn_dis_model = os.path.join(model_dir, fn_prefix + "_dis.model")
-    time_out = librosa.istft(out_complex)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    generated = gen.generate_data(1, device)
+    time_out = convert_sample_to_time_signal(generated)
     sr = 22050
     librosa.output.write_wav(fn_wav, time_out, sr)
     torch.save(gen.state_dict(), fn_gen_model)

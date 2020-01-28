@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from torch import Tensor as tensor
+import librosa
 
 
 def visualize_sample(samples, plot=True):
@@ -33,6 +34,8 @@ def visualize_sample(samples, plot=True):
         real = real.reshape(new_x, new_y)
         imag = imag.reshape(new_x, new_y)
         img = np.hstack([real, imag])
+        if not plot:
+            return img
         if row_img is None:
             row_img = img
         else:
@@ -48,12 +51,11 @@ def visualize_sample(samples, plot=True):
                 row_img = None
     if full_img is None:
         full_img = row_img
-    if plot:
-        plt.ion()
-        plt.matshow(full_img, cmap="coolwarm", fignum=0)
-        plt.show()
-        plt.pause(0.0000001)
-    return full_img
+    plt.ion()
+    plt.matshow(full_img, cmap="coolwarm", fignum=0)
+    plt.show()
+    plt.pause(0.0000001)
+    return img
 
 
 def get_stft_shape(sample_rate, snippet_length, time_steps):
@@ -85,25 +87,38 @@ def save_as_time_signal(stft_signal, output_file, sr=22050):
     time_signal = librosa.istft(stft_signal)
     librosa.output.write(output_file, time_signal, sr)
 
+def convert_sample_to_time_signal(sample):
+
+    sample = sample.squeeze(0).cpu().detach().numpy()
+    sample = sample[0] + 1j*sample[1]
+
+    return librosa.istft(sample)
 
 class CustomWriter(SummaryWriter):
-    def __init__(self):
-        parent = "runs"
-        run = len(glob.glob(parent + "/*"))
-        directory = os.path.join(parent, str(run))
-        super(CustomWriter, self).__init__(directory)
+    def __init__(self, *args, **kwargs):
+        #parent = "runs"
+        #run = len(glob.glob(parent + "/*"))
+        #directory = os.path.join(parent, str(run))
+        super(CustomWriter, self).__init__(*args, **kwargs)
 
     def write_gen_loss(self, loss, step):
-        self.add_scalar("Generator loss", loss, step)
+        self.add_scalar("Gen/loss", loss, step)
+
+    def write_gen_reg_loss(self, loss, step):
+        self.add_scalar("Gen/reg_loss", loss, step)
 
     def write_dis_fake_loss(self, loss, step):
-        self.add_scalar("Discriminator fake loss", loss, step)
+        self.add_scalar("Dis/fake_loss", loss, step)
 
     def write_dis_loss(self, loss, step):
-        self.add_scalar("Discriminator loss", loss, step)
+        self.add_scalar("Dis/loss", loss, step)
 
-    def write_image(self, image):
-        self.add_image("Generated samples", image)
+    def write_image(self, image, step):
+        self.add_image("Gen/visualized_samples", image, step, dataformats="HW")
+
+    def write_audio(self, sample, step):
+        sample = convert_sample_to_time_signal(sample)
+        self.add_audio("Gen/audio", sample, step, sample_rate=22050)
 
 
 class Progress:
