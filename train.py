@@ -118,6 +118,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
         discriminator.train()
         generator.eval()
         for step, data in enumerate(data_loader):
+            dis_step = epoch * len(data_loader) + step
             data = data.to(device)
             logger.debug("Batch: {}/{}".format(step, len(data_loader)))
             if visual:
@@ -126,7 +127,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
             out = discriminator(data)
             # make labels noisy (real: 0.7-1.2)
             label = Variable(0.7 + 0.3 * torch.rand(len(out), 1)).to(device)
-            #acc = len(out[out>=0.5])/len(out)
+            acc = len(out[out>=0.5])/len(out)
+            writer.write_dis_acc(acc, dis_step)
             loss = discriminator.loss(out, label).to(device)
             loss.backward()
             fake_data = generator.generate_data(batch_size,
@@ -138,7 +140,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
             out = discriminator(fake_data)
             if visual:
                 visualize_sample(fake_data.cpu(), plot=True)
-            #fake_acc = len(out[out<0.5])/len(out)
+            fake_acc = len(out[out<0.5])/len(out)
+            writer.write_dis_fake_acc(fake_acc, dis_step)
             # make labels noisy (fake: 0-0.3)
             label = Variable(0.3 * torch.rand(len(out), 1)).to(device)
             fake_loss = discriminator.loss(out, label).to(device)
@@ -151,10 +154,9 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
             logger.debug("Fake Loss: {}".format(fake_loss.item()))
             #logger.debug("Fake acc: {}".format(acc))
             running_loss += loss.item()
-            writer.write_dis_loss(loss.item(), epoch * len(data_loader) + step)
+            writer.write_dis_loss(loss.item(), dis_step)
             running_fake_loss += fake_loss.item()
-            writer.write_dis_fake_loss(fake_loss.item(),
-                                       epoch * len(data_loader) + step)
+            writer.write_dis_fake_loss(fake_loss.item(), dis_step)
 
         losses.append(running_loss / len(data_loader))
         fake_losses.append(running_fake_loss / len(data_loader))
@@ -168,35 +170,30 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
         if visual:
             progress.switch_to_generator()
         for step in range(len(data_loader)):
+            gen_step = epoch * len(data_loader) + step
             generator.optim.zero_grad()
             logger.debug("Batch: {}/{}".format(step, len(data_loader)))
             fake_data = generator.generate_data(batch_size, device, train=True)
             if data_loader.dataset.transform:
-                fake_data_transformed = data_loader.dataset.transform(
-                    fake_data)  # non-generated data is transformed
-            if (epoch * len(data_loader) + step % 100 == 0):
+                fake_data_transformed = data_loader.dataset.transform(fake_data) # non-generated data is transformed
+            if(gen_step % 500 == 0):
                 logger.debug("Writing generated sample...")
-                writer.write_image(
-                    visualize_sample(fake_data_transformed.cpu(), plot=visual),
-                    epoch * len(data_loader) + step)
-                writer.write_audio(fake_data_transformed.cpu()[0],
-                                   epoch * len(data_loader) + step)
+                writer.write_image(visualize_sample(fake_data_transformed.cpu(), plot=visual), gen_step)
+                writer.write_audio(fake_data_transformed.cpu()[0], gen_step)
             out = discriminator(fake_data_transformed)
-            #acc = len(out[out>=0.5])/len(out)
+            acc = len(out[out>=0.5])/len(out)
+            writer.write_gen_acc(acc, gen_step)
             # TODO: norm calculation is wrong
-            reg_loss = torch.norm(fake_data, p=1) / dim4d(*fake_data.shape)
-            writer.write_gen_reg_loss(L1_lambda * reg_loss.item(),
-                                      epoch * len(data_loader) + step)
+            reg_loss = torch.norm(fake_data, p=1)/dim4d(*fake_data.shape)
+            writer.write_gen_reg_loss(L1_lambda * reg_loss.item(), gen_step)
             logger.debug("Reg loss: {}".format(L1_lambda * reg_loss))
             # flip labels when training generator
-            gen_loss = generator.loss(
-                1-out,
-                Variable(torch.ones([batch_size, 0])).to(device))
+            gen_loss = generator.loss(1-out, Variable(
+                torch.ones([batch_size, 0])).to(device))
+            writer.write_gen_loss(gen_loss.item(), gen_step)
             gen_loss += L1_lambda * reg_loss
             gen_loss.backward()
             generator.optim.step()
-            writer.write_gen_loss(gen_loss.item(),
-                                  epoch * len(data_loader) + step)
             if visual:
                 progress.update_batch(gen_loss.item())
             logger.debug("Gen loss: {}".format(gen_loss.item()))
@@ -205,6 +202,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
         gen_losses.append(running_gen_loss / len(data_loader))
         logger.debug("Running generator loss: {}".format(gen_losses[-1]))
 
+    writer.flush()
     writer.close()
     return generator, discriminator
 
