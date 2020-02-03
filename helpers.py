@@ -113,6 +113,15 @@ class CustomWriter(SummaryWriter):
     def write_dis_loss(self, loss, step):
         self.add_scalar("Dis/loss", loss, step)
 
+    def write_gen_acc(self, acc, step):
+        self.add_scalar("Gen/acc", acc, step)
+
+    def write_dis_acc(self, acc, step):
+        self.add_scalar("Dis/acc", acc, step)
+
+    def write_dis_fake_acc(self, acc, step):
+        self.add_scalar("Dis/fake_acc", acc, step)
+
     def write_image(self, image, step):
         self.add_image("Gen/visualized_samples", image, step, dataformats="HW")
 
