@@ -1,5 +1,4 @@
 import os
-import glob
 import datetime
 import time
 import numpy as np
@@ -82,7 +81,6 @@ def save_as_time_signal(stft_signal, output_file, sr=22050):
 
     """
     if type(stft_signal) is tensor:
-        logger.debug("Converting signal from `torch.Tensor` to numpy array")
         stft_signal = stft_signal.detach().numpy()
     time_signal = librosa.istft(stft_signal)
     librosa.output.write(output_file, time_signal, sr)
@@ -96,9 +94,6 @@ def convert_sample_to_time_signal(sample):
 
 class CustomWriter(SummaryWriter):
     def __init__(self, *args, **kwargs):
-        #parent = "runs"
-        #run = len(glob.glob(parent + "/*"))
-        #directory = os.path.join(parent, str(run))
         super(CustomWriter, self).__init__(*args, **kwargs)
 
     def write_gen_loss(self, loss, step):
