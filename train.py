@@ -129,6 +129,8 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
             label = Variable(0.7 + 0.3 * torch.rand(len(out), 1)).to(device)
             acc = len(out[out >= 0.5]) / len(out)
             writer.write_dis_acc(acc, dis_step)
+            # flip first label
+            label[0] -= 0.4
             loss = discriminator.loss(out, label).to(device)
             loss.backward()
             fake_data = generator.generate_data(batch_size,
@@ -144,15 +146,17 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
             writer.write_dis_fake_acc(fake_acc, dis_step)
             # make labels noisy (fake: 0-0.3)
             label = Variable(0.3 * torch.rand(len(out), 1)).to(device)
+            # flip first label
+            label[0] += 0.3
             fake_loss = discriminator.loss(out, label).to(device)
             fake_loss.backward()
             if visual:
                 progress.update_batch(loss.item(), fake_loss.item())
             discriminator.optim.step()
             logger.debug("Loss: {}".format(loss.item()))
-            #logger.debug("Acc: {}".format(acc))
+            # logger.debug("Acc: {}".format(acc))
             logger.debug("Fake Loss: {}".format(fake_loss.item()))
-            #logger.debug("Fake acc: {}".format(acc))
+            # logger.debug("Fake acc: {}".format(acc))
             running_loss += loss.item()
             writer.write_dis_loss(loss.item(), dis_step)
             running_fake_loss += fake_loss.item()
@@ -193,7 +197,7 @@ def train(generator_type, data_loader, epochs, entropy_size, models, lrs,
             # flip labels when training generator
             gen_loss = generator.loss(
                 1 - out,
-                Variable(torch.ones([batch_size, 0])).to(device))
+                Variable(torch.zeros([batch_size, 1])).to(device))
             writer.write_gen_loss(gen_loss.item(), gen_step)
             gen_loss += L1_lambda * reg_loss
             gen_loss.backward()
