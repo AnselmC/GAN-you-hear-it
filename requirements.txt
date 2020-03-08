@@ -1,0 +1,4 @@
+simpleaudio
+numpy
+pytorch
+librosa
