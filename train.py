@@ -12,9 +12,9 @@ from torch.utils.data import DataLoader
 import librosa
 import numpy as np
 # own
-from gann import ConvolutionalGenerator, LinearGenerator, Discriminator
-from dataset import AudioSnippetDataset
-from helpers import Progress, CustomWriter, visualize_sample, convert_sample_to_time_signal
+from gan.gan import ConvolutionalGenerator, LinearGenerator, Discriminator
+from gan.dataset import AudioSnippetDataset
+from gan.helpers import Progress, CustomWriter, visualize_sample, convert_sample_to_time_signal
 
 __description__ = r"""
               ____    ______  __  __      __    __

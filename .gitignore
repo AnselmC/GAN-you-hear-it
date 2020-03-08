@@ -4,11 +4,8 @@ __pycache__/
 *.pyc
 *.wav
 *.npy
-*.npz
-music/
 runs/
-example_music/
+data/*/*
 training_data*
 logs/
-.nosync
 \#*\#
