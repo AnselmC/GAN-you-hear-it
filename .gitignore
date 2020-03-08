@@ -6,6 +6,7 @@ __pycache__/
 *.npy
 *.npz
 music/
+runs/
 example_music/
 training_data*
 logs/
