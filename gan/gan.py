@@ -168,7 +168,6 @@ class ConvolutionalGenerator(CustomModel):
             nn.Linear(output_size, 2 * final_output_h * final_output_w),
             nn.Tanh())
         print(f"{final_output_h}x{final_output_w}x2")
-        print(model)
         return model
 
     def __init__(self,

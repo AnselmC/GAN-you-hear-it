@@ -1,13 +1,12 @@
 #!/bin/bash
-
-INPUT='training_data_single_beat/'
+INPUT='data/training_data_single_beat/'
 EPOCHS=100
 BATCH_SIZE=64
 SUBSET_SIZE=10000
 LINEAR='linear'
 CONV='conv'
 GENERATOR=$CONV
-ENTROPY_SIZE_CONV=10
+ENTROPY_SIZE_CONV=128
 ENTROPY_SIZE_LINEAR=128
 REG_STRENGTH=10
 DIS_LR=0.0001
